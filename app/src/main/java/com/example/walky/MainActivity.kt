@@ -1,0 +1,55 @@
+package com.example.walky
+
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
+import android.util.Base64
+import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.annotation.RequiresApi
+import com.example.walky.ui.navigation.WalkyNav
+import com.example.walky.ui.theme.WalkyTheme
+import com.google.firebase.FirebaseApp
+import com.kakao.sdk.common.KakaoSdk
+import java.security.MessageDigest
+
+class MainActivity : ComponentActivity() {
+    @RequiresApi(Build.VERSION_CODES.P)
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        printKeyHash()
+        // Firebase/Kakao 초기화
+        FirebaseApp.initializeApp(this)
+        KakaoSdk.init(this, getString(R.string.kakao_native_app_key))
+        setContent {
+            WalkyTheme {
+                WalkyNav()
+            }
+        }
+    }
+    @RequiresApi(Build.VERSION_CODES.P)
+    private fun printKeyHash() {
+        try {
+            val info = packageManager.getPackageInfo(
+                packageName,
+                PackageManager.GET_SIGNING_CERTIFICATES
+            )
+            // Android 9 이상
+            val signers = info.signingInfo?.apkContentsSigners
+            // Android 8 이하 호환
+                ?: info.signatures
+            if (signers != null) {
+                for (sig in signers) {
+                    val md = MessageDigest.getInstance("SHA-1")
+                    md.update(sig.toByteArray())
+                    val hash = Base64.encodeToString(md.digest(), Base64.NO_WRAP)
+                    Log.d("KeyHash", hash)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("KeyHash", "키 해시 생성 실패", e)
+        }
+    }
+
+}

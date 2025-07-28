@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "1032603236930",
+    "project_id": "walky-1401",
+    "storage_bucket": "walky-1401.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1032603236930:android:14797730ed6ba39fbccbdb",
+        "android_client_info": {
+          "package_name": "com.example.walky"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1032603236930-t4cs363oqavijd3bscf478k8628jovfb.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.walky",
+            "certificate_hash": "70ef277e3a3357cc78b089b2cdc76831ddf3905d"
+          }
+        },
+        {
+          "client_id": "1032603236930-0t3400lo94hhf818ej7mk38js6ebbad9.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCBhXqE6tWq14XWu7AkL54Or1EqzhhKEvg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1032603236930-0t3400lo94hhf818ej7mk38js6ebbad9.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

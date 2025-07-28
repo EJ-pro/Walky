@@ -1,0 +1,39 @@
+# ─── IntelliJ / Android Studio ─────────────────────────
+.idea/
+*.iml
+*.iws
+/captures/
+
+# OS 파일
+.DS_Store
+
+# ─── Gradle ─────────────────────────────────────────────
+.gradle/
+build/
+!gradle-wrapper.jar
+!gradle-wrapper.properties
+/local.properties
+
+# ─── Android / Kotlin ───────────────────────────────────
+*.apk
+*.ap_
+*.dex
+*.class
+*.kotlin_module
+
+# 빌드 아티팩트
+**/build/
+
+# ─── Firebase (옵션) ────────────────────────────────────
+# 만약 리포지터리에 포함시키고 싶지 않다면 이 줄을 활성화하세요.
+# google-services.json
+
+# ─── Signing Keys ───────────────────────────────────────
+*.jks
+*.keystore
+
+# ─── 환경 변수 / 민감 정보 ───────────────────────────────
+*.env
+
+# ─── Crashlytics ────────────────────────────────────────
+crashlytics.properties
