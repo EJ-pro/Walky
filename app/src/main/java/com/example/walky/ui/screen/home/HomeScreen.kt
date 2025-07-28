@@ -47,6 +47,7 @@ fun HomeScreen(onStartWalk: () -> Unit = {}) {
 
     LaunchedEffect(Unit) {
         locationLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+        vm.fetchLocationAndWeather(context) // ✅ 수정
     }
 
     Scaffold(

@@ -21,7 +21,7 @@ data class WeatherResponse(
 
 class WeatherRepository {
     private val client = OkHttpClient()
-    private val apiKey = "YOUR_OPENWEATHERMAP_API_KEY"
+    private val apiKey = "ef20c8c5602c607d08060a5a277e9c28"
 
     /**
      * 위도(lat), 경도(lon)로 현재 날씨를 조회합니다.

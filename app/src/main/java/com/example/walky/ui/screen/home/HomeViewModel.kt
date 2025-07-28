@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.walky.data.LocationRepository
+import com.example.walky.data.WeatherRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,7 +28,8 @@ data class HomeUiState(
 )
 
 class HomeViewModel(
-    private val locRepo: LocationRepository = LocationRepository()
+    private val locRepo: LocationRepository = LocationRepository(),
+    private val weatherRepo: WeatherRepository = WeatherRepository()
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -41,8 +43,6 @@ class HomeViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
-                // TODO: 실제 데이터로 교체
-                val weather = Weather("강남구", 22, "맑음")
                 val dog = Dog("멍멍이", "골든 리트리버", 3, "https://via.placeholder.com/64", 3)
                 val recent = listOf(
                     WalkRecord("한강공원 산책", LocalDateTime.now(), 35, 2.1, 142),
@@ -50,20 +50,45 @@ class HomeViewModel(
                 )
                 val weekly = WeeklySummary(5, 8.7, 4 * 60 + 12)
 
-                _uiState.value = HomeUiState(
-                    weather = weather,
-                    dog = dog,
-                    recentWalks = recent,
-                    weeklySummary = weekly,
-                    isLoading = false
-                )
+                _uiState.update {
+                    it.copy(
+                        dog = dog,
+                        recentWalks = recent,
+                        weeklySummary = weekly,
+                        isLoading = false
+                    )
+                }
+
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, error = e.localizedMessage) }
             }
         }
     }
 
-    /** 권한 승인 후 호출: Context를 전달받아 현재 위치를 가져옵니다 */
+    /** 현재 위치 + 날씨 데이터를 함께 가져옴 */
+    fun fetchLocationAndWeather(context: Context) {
+        viewModelScope.launch {
+            try {
+                // 1. 현재 위치
+                val (lat, lon) = locRepo.getCurrentLocation(context)
+                _uiState.update { it.copy(location = lat to lon) }
+
+                // 2. 날씨 API 호출
+                val res = weatherRepo.fetchCurrentWeatherByCoords(lat, lon)
+                val weather = Weather(
+                    city = res.name,
+                    tempC = res.main.temp.toInt(),
+                    description = res.weather.firstOrNull()?.description ?: "알 수 없음"
+                )
+                _uiState.update { it.copy(weather = weather) }
+
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "날씨 가져오기 실패: ${e.localizedMessage}") }
+            }
+        }
+    }
+
+    /** 기존 위치만 가져오는 함수 (필요시 유지) */
     fun fetchLocation(context: Context) {
         viewModelScope.launch {
             val loc = runCatching { locRepo.getCurrentLocation(context) }.getOrNull()
