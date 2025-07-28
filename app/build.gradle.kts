@@ -69,4 +69,6 @@ dependencies {
 
     // (선택) 권한 요청을 돕는 Accompanist Permissions
     implementation("com.google.accompanist:accompanist-permissions:0.30.1")
+
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
 }

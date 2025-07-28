@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.walky.R
 import com.example.walky.data.AuthRepository
+import com.example.walky.data.LoginPrefs
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 
 @Composable
@@ -23,11 +24,12 @@ fun LoginScreen(onSuccess: () -> Unit) {
     val ctx = LocalContext.current
     val activity = ctx as Activity
     // repository & viewmodel
+    val prefs = remember { LoginPrefs(ctx) }
     val repo = AuthRepository(ctx, activity)
 
     // 뷰모델 생성 시 AuthRepository에 activity까지 전달
     val vm: LoginViewModel = viewModel {
-        LoginViewModel(AuthRepository(ctx, activity))
+        LoginViewModel(AuthRepository(ctx, activity), prefs)
     }
     val state by vm.state.collectAsState()
 

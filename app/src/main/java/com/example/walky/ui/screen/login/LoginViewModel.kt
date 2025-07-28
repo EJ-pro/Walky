@@ -1,8 +1,10 @@
 package com.example.walky.ui.login
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.walky.data.AuthRepository
+import com.example.walky.data.LoginPrefs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -15,7 +17,8 @@ sealed interface LoginState {
 }
 
 class LoginViewModel(
-    private val repo: AuthRepository
+    private val repo: AuthRepository,
+    private val prefs: LoginPrefs
 ) : ViewModel() {
     private val _state = MutableStateFlow<LoginState>(LoginState.Idle)
     val state: StateFlow<LoginState> = _state
@@ -31,6 +34,7 @@ class LoginViewModel(
             runCatching {
                 repo.firebaseWithGoogle(idToken)
                 repo.registerUserIfNew()
+                prefs.setLoggedIn(true)
             }
                 .onSuccess { _state.value = LoginState.Success }
                 .onFailure { _state.value = LoginState.Error(it.message ?: "Google 로그인 실패") }
@@ -44,9 +48,11 @@ class LoginViewModel(
                     ?: error("토큰을 받지 못했습니다.")
                 repo.firebaseWithKakao(id, access)
                 repo.registerUserIfNew()
+                prefs.setLoggedIn(true)
             }.onSuccess {
                 _state.value = LoginState.Success
             }.onFailure {
+                Log.e("KakaoLogin", "Firebase 연동 실패", it)
                 _state.value = LoginState.Error(it.message ?: "카카오 로그인 실패")
             }
         }
