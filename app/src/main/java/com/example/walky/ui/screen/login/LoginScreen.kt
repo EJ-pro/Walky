@@ -4,6 +4,7 @@ import android.app.Activity
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -27,16 +28,20 @@ import com.example.walky.R
 import com.example.walky.data.AuthRepository
 import com.example.walky.data.LoginPrefs
 import com.google.android.gms.auth.api.signin.GoogleSignIn
+import androidx.compose.foundation.text.ClickableText
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.AnnotatedString.Range
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.style.TextDecoration
 
 @Composable
 fun LoginScreen(onSuccess: () -> Unit) {
     val ctx = LocalContext.current
     val activity = ctx as Activity
-    // repository & viewmodel
+
     val prefs = remember { LoginPrefs(ctx) }
     val repo = AuthRepository(ctx, activity)
 
-    // 뷰모델 생성 시 AuthRepository에 activity까지 전달
     val vm: LoginViewModel = viewModel {
         LoginViewModel(AuthRepository(ctx, activity), prefs)
     }
@@ -53,47 +58,60 @@ fun LoginScreen(onSuccess: () -> Unit) {
             onSuccess()
         }
     }
+
     val pretendard = FontFamily(
         Font(R.font.pretendard_regular, FontWeight.Normal),
         Font(R.font.pretendard_bold, FontWeight.Bold),
         Font(R.font.pretendard_semibold, FontWeight.SemiBold),
         Font(R.font.pretendard_light, FontWeight.Light)
     )
+    var showTermsDialog by remember { mutableStateOf(false) }
+    var showPrivacyDialog by remember { mutableStateOf(false) }
+
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Spacer(Modifier.height(100.dp))
+
         Text(
-            "당신의 건강한",
+            text = "당신의 건강한",
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = pretendard,
-            color = Color.Black
+            color = MaterialTheme.colorScheme.onBackground
         )
         Text(
-            "한 걸음을 응원해요!",
+            text = "한 걸음을 응원해요!",
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = pretendard,
-            color = Color.Black
+            color = MaterialTheme.colorScheme.onBackground
         )
+
         Spacer(Modifier.height(25.dp))
+
         Text(
-            "WalkMate",
+            text = "WalkMate",
             fontSize = 20.sp,
             fontWeight = FontWeight.Medium,
             fontFamily = pretendard,
             color = Color(0xFF767676)
         )
+
         Spacer(Modifier.height(150.dp))
+
+        // 카카오 로그인 버튼
         Button(
             onClick = { vm.signInKakao() },
             shape = RoundedCornerShape(40.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = Color(0xFFFEE500),
-                contentColor = Color.Black
+                contentColor = MaterialTheme.colorScheme.onBackground
             ),
             modifier = Modifier
                 .fillMaxWidth()
@@ -102,23 +120,25 @@ fun LoginScreen(onSuccess: () -> Unit) {
             Icon(
                 painter = painterResource(R.drawable.ic_kakao),
                 contentDescription = null,
-                tint = Color.Unspecified, // 원본 색 유지
-                modifier = Modifier.size(28.dp) // ← 아이콘 크기 조절
+                tint = Color.Unspecified,
+                modifier = Modifier.size(28.dp)
             )
             Spacer(Modifier.width(8.dp))
-            Text("Login With Kakao",
+            Text(
+                text = "Login With Kakao",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = pretendard,
-                color = Color.Black)
+                color = Color.Black
+            )
         }
 
         Spacer(Modifier.height(16.dp))
 
-        // Google 버튼
+        // 구글 로그인 버튼
         OutlinedButton(
             onClick = {
-                Log.d("LoginScreen","Google 버튼 클릭")
+                Log.d("LoginScreen", "Google 버튼 클릭")
                 googleLauncher.launch(repo.googleIntent())
             },
             modifier = Modifier
@@ -130,56 +150,137 @@ fun LoginScreen(onSuccess: () -> Unit) {
             Icon(
                 painter = painterResource(R.drawable.ic_google),
                 contentDescription = null,
-                tint = Color.Unspecified, // 원본 색 유지
-                modifier = Modifier.size(28.dp) // ← 아이콘 크기 조절
+                tint = Color.Unspecified,
+                modifier = Modifier.size(28.dp)
             )
             Spacer(Modifier.width(8.dp))
-            Text("Login with Google",
+            Text(
+                text = "Login with Google",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = pretendard,
-                color = Color.Black)
+                color = Color.Black
+            )
         }
 
         if (state is LoginState.Loading) {
             Spacer(Modifier.height(16.dp))
             CircularProgressIndicator()
         }
+
         if (state is LoginState.Error) {
             Spacer(Modifier.height(8.dp))
-            Text((state as LoginState.Error).msg, color = MaterialTheme.colorScheme.error)
+            Text(
+                text = (state as LoginState.Error).msg,
+                color = MaterialTheme.colorScheme.error
+            )
         }
 
         Spacer(Modifier.height(100.dp))
 
-        Text(
-            text = buildAnnotatedString {
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Medium)){
-                    append("계정을 생성하시면 ")
-                }
+        // 하단 약관 안내 텍스트 (ClickableText)
+        val annotatedText = buildAnnotatedString {
+            append("계정을 생성하시면 ")
 
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
-                    append("이용약관")
-                }
+            pushStringAnnotation(tag = "TERMS", annotation = "terms")
+            withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, textDecoration = TextDecoration.Underline)) {
+                append("이용약관")
+            }
+            pop()
 
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Medium)){
-                    append("과 ")
-                }
+            append("과 ")
 
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
-                    append("개인정보처리방침")
-                }
+            pushStringAnnotation(tag = "PRIVACY", annotation = "privacy")
+            withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, textDecoration = TextDecoration.Underline)) {
+                append("개인정보처리방침")
+            }
+            pop()
 
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Medium)){
-                    append("에 동이하는 것으로 간주됩니다.")
-                }
-            },
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Light,
-            fontFamily = pretendard,
-            color = Color.Black,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth() // 중앙 정렬 위해 필요
+            append("에 동의하는 것으로 간주됩니다.")
+        }
+
+        ClickableText(
+            text = annotatedText,
+            modifier = Modifier.fillMaxWidth(),
+            style = LocalTextStyle.current.copy(
+                fontSize = 14.sp,
+                fontFamily = pretendard,
+                color = MaterialTheme.colorScheme.onBackground,
+                textAlign = TextAlign.Center
+            ),
+            onClick = { offset ->
+                annotatedText.getStringAnnotations(tag = "TERMS", start = offset, end = offset)
+                    .firstOrNull()?.let {
+                        // "이용약관" 클릭 시
+                        Log.d("LoginScreen", "이용약관 클릭됨")
+                        // TODO: Dialog 띄우거나 WebView 이동
+                        showTermsDialog = true
+                    }
+
+                annotatedText.getStringAnnotations(tag = "PRIVACY", start = offset, end = offset)
+                    .firstOrNull()?.let {
+                        // "개인정보처리방침" 클릭 시
+                        Log.d("LoginScreen", "개인정보처리방침 클릭됨")
+                        // TODO: Dialog 띄우거나 WebView 이동
+                        showPrivacyDialog = true
+                    }
+            }
         )
+        if (showTermsDialog) {
+            AlertDialog(
+                onDismissRequest = { showTermsDialog = false },
+                confirmButton = {
+                    TextButton(onClick = { showTermsDialog = false }) {
+                        Text("닫기", fontFamily = pretendard)
+                    }
+                },
+                title = { Text("이용약관", fontWeight = FontWeight.Bold, fontFamily = pretendard) },
+                text = {
+                    Text(
+                        text = """
+                    본 애플리케이션 'WalkMate'는 사용자의 건강한 산책 습관 형성을 위한 앱입니다.
+                    
+                    사용자는 아래와 같은 서비스 제공에 동의합니다:
+                    - 산책 거리 및 기록 저장
+                    - 날씨 정보 제공
+                    - 위치 기반 기능 활용
+
+                    사용자는 앱 사용 시 타인의 권리를 침해하거나 서비스를 방해하지 않아야 하며,
+                    본 약관은 언제든지 변경될 수 있습니다. 변경 시 앱 내 공지사항을 통해 고지됩니다.
+                """.trimIndent(),
+                        fontSize = 14.sp,
+                        fontFamily = pretendard
+                    )
+                }
+            )
+        }
+        if (showPrivacyDialog) {
+            AlertDialog(
+                onDismissRequest = { showPrivacyDialog = false },
+                confirmButton = {
+                    TextButton(onClick = { showPrivacyDialog = false }) {
+                        Text("닫기", fontFamily = pretendard)
+                    }
+                },
+                title = { Text("개인정보처리방침", fontWeight = FontWeight.Bold, fontFamily = pretendard) },
+                text = {
+                    Text(
+                        text = """
+                    'WalkMate'는 사용자 인증 및 산책 기록 기능을 위해 최소한의 개인정보를 수집합니다.
+
+                    수집 항목:
+                    - 이메일 주소 (Google/Kakao 로그인 시)
+                    - 기기 위치 정보 (산책 경로 및 날씨 제공 목적)
+
+                    수집된 정보는 외부에 공개되지 않으며, 보안적으로 안전하게 관리됩니다.
+                    사용자는 언제든지 정보 삭제 요청이 가능하며, 관련 문의는 앱 설정 > 문의하기를 통해 가능합니다.
+                """.trimIndent(),
+                        fontSize = 14.sp,
+                        fontFamily = pretendard
+                    )
+                }
+            )
+        }
+
     }
 }
