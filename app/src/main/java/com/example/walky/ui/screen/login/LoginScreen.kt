@@ -33,6 +33,10 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.AnnotatedString.Range
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.style.TextDecoration
+import com.example.walky.data.LocationRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(onSuccess: () -> Unit) {
@@ -57,6 +61,27 @@ fun LoginScreen(onSuccess: () -> Unit) {
         if (state is LoginState.Success) {
             onSuccess()
         }
+    }
+    val context = LocalContext.current
+    val fused = remember { LocationRepository() }
+
+    var userLocation by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            // 위치 가져오기
+            CoroutineScope(Dispatchers.Main).launch {
+                userLocation = runCatching { fused.getCurrentLocation(context) }.getOrNull()
+                Log.d("LoginScreen", "위치: $userLocation")
+            }
+        }
+    }
+
+    // 위치 권한 요청 실행
+    LaunchedEffect(Unit) {
+        locationPermissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
     }
 
     val pretendard = FontFamily(
