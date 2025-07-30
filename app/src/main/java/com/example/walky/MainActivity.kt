@@ -30,12 +30,7 @@ class MainActivity : ComponentActivity() {
             prefs.isLoggedIn.collect { loggedIn ->
                 setContent {
                     WalkyTheme {
-                        if (loggedIn) {
-                            WalkyNav(startDestination = if (loggedIn) "home" else "login")
-                            // 자동 로그인 시 바로 홈
-                        } else {
-                            WalkyNav(startDestination = if (loggedIn) "home" else "login")
-                        }
+                        WalkyNav()
                     }
                 }
             }

@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,8 +39,8 @@ fun HomeScreen(onStartWalk: () -> Unit = {}) {
     val context = LocalContext.current
     val vm: HomeViewModel = viewModel()
     val state by vm.uiState.collectAsState()
+    var isPetMode by rememberSaveable { mutableStateOf(true) }
 
-    // 위치 권한 요청 런처
     val locationLauncher =
         rememberLauncherForActivityResult(RequestPermission()) { granted ->
             if (granted) vm.fetchLocation(context)
@@ -47,32 +48,50 @@ fun HomeScreen(onStartWalk: () -> Unit = {}) {
 
     LaunchedEffect(Unit) {
         locationLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-        vm.fetchLocationAndWeather(context) // ✅ 수정
+        vm.fetchLocationAndWeather(context)
     }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("산책 메이트", color = Color.White) },
-                actions = {
-                    IconButton(onClick = { /* TODO */ }) {
-                        Icon(Icons.Default.Notifications, contentDescription = "알림", tint = Color.White)
-                    }
-                    Image(
-                        painter = rememberAsyncImagePainter("https://via.placeholder.com/150"),
-                        contentDescription = "프로필",
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .clickable { /* TODO */ },
-                        contentScale = ContentScale.Crop
+            Column {
+                TopAppBar(
+                    title = { Text("산책 메이트", color = Color.White) },
+                    actions = {
+                        IconButton(onClick = { /* TODO */ }) {
+                            Icon(Icons.Default.Notifications, contentDescription = "알림", tint = Color.White)
+                        }
+                        Image(
+                            painter = rememberAsyncImagePainter("https://via.placeholder.com/150"),
+                            contentDescription = "프로필",
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .clickable { /* TODO */ },
+                            contentScale = ContentScale.Crop
+                        )
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+                    modifier = Modifier.background(
+                        Brush.horizontalGradient(listOf(Color(0xFF4A90E2), Color(0xFF9013FE)))
                     )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
-                modifier = Modifier.background(
-                    Brush.horizontalGradient(listOf(Color(0xFF4A90E2), Color(0xFF9013FE)))
                 )
-            )
+
+                // 🐾 모드 전환 Switch
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("일반 모드", color = if (!isPetMode) Color.Black else Color.Gray)
+                    Switch(
+                        checked = isPetMode,
+                        onCheckedChange = { isPetMode = it }
+                    )
+                    Text("반려견 모드", color = if (isPetMode) Color.Black else Color.Gray)
+                }
+            }
         }
     ) { inner ->
         Box(Modifier.padding(inner)) {
@@ -90,7 +109,7 @@ fun HomeScreen(onStartWalk: () -> Unit = {}) {
             }
 
             Column(Modifier.fillMaxSize().padding(16.dp)) {
-                // ─ 오늘의 날씨 카드 ─
+                // 🌤 날씨 카드
                 state.weather?.let { w ->
                     Card(
                         shape = RoundedCornerShape(16.dp),
@@ -127,76 +146,67 @@ fun HomeScreen(onStartWalk: () -> Unit = {}) {
 
                 Spacer(Modifier.height(8.dp))
 
-                // ─ 내 위치 표시 ─
-                state.location
-                    ?.let { (lat, lon) ->
-                        Text(
-                            text = "내 위치: %.5f, %.5f".format(lat, lon),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.Gray
-                        )
-                    }
-                    ?: Text(
-                        text = "위치 정보 없음",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
-                    )
+                // 📍 위치 표시
+                state.location?.let { (lat, lon) ->
+                    Text("내 위치: %.5f, %.5f".format(lat, lon), color = Color.Gray)
+                } ?: Text("위치 정보 없음", color = Color.Gray)
 
                 Spacer(Modifier.height(16.dp))
 
-                // ─ 반려견 카드 ─
-                state.dog?.let { d ->
-                    Card(
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                // 🐶 반려견 카드 (반려견 모드일 때만)
+                if (isPetMode) {
+                    state.dog?.let { d ->
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Image(
-                                painter = rememberAsyncImagePainter(d.avatarUrl),
-                                contentDescription = "강아지 사진",
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .clip(CircleShape),
-                                contentScale = ContentScale.Crop
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(d.name, style = MaterialTheme.typography.titleMedium)
-                                Text("${d.breed} · ${d.age}살", color = Color.Gray)
-                                Spacer(Modifier.height(4.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    repeat(5) { idx ->
-                                        val filled = idx < d.activityLevel
-                                        Icon(
-                                            painterResource(
-                                                if (filled) R.drawable.ic_dot_filled else R.drawable.ic_dot_outline
-                                            ),
-                                            contentDescription = null,
-                                            tint = if (filled) Color.Green else Color.LightGray,
-                                            modifier = Modifier.size(8.dp)
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Image(
+                                    painter = rememberAsyncImagePainter(d.avatarUrl),
+                                    contentDescription = "강아지 사진",
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(CircleShape),
+                                    contentScale = ContentScale.Crop
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(d.name, style = MaterialTheme.typography.titleMedium)
+                                    Text("${d.breed} · ${d.age}살", color = Color.Gray)
+                                    Spacer(Modifier.height(4.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        repeat(5) { idx ->
+                                            val filled = idx < d.activityLevel
+                                            Icon(
+                                                painter = painterResource(
+                                                    if (filled) R.drawable.ic_dot_filled else R.drawable.ic_dot_outline
+                                                ),
+                                                contentDescription = null,
+                                                tint = if (filled) Color.Green else Color.LightGray,
+                                                modifier = Modifier.size(8.dp)
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                        }
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            "활동량 보통",
+                                            color = Color.Gray,
+                                            style = MaterialTheme.typography.bodySmall
                                         )
-                                        Spacer(Modifier.width(4.dp))
                                     }
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        "활동량 보통",
-                                        color = Color.Gray,
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
                                 }
                             }
                         }
+                        Spacer(Modifier.height(16.dp))
                     }
                 }
 
-                Spacer(Modifier.height(16.dp))
-
-                // ─ 산책 시작 버튼 ─
+                // 🚶 산책 시작 버튼
                 Button(
                     onClick = onStartWalk,
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00C853)),
@@ -216,7 +226,7 @@ fun HomeScreen(onStartWalk: () -> Unit = {}) {
 
                 Spacer(Modifier.height(24.dp))
 
-                // ─ 최근 산책 기록 ─
+                // 🕒 최근 산책 기록
                 Text("최근 산책 기록", style = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.height(8.dp))
                 LazyColumn(
@@ -224,13 +234,13 @@ fun HomeScreen(onStartWalk: () -> Unit = {}) {
                     modifier = Modifier.heightIn(max = 200.dp)
                 ) {
                     items(state.recentWalks) { walk ->
-                        // … 생략 …
+                        // TODO: 각 산책 아이템 UI 구현 필요
                     }
                 }
 
                 Spacer(Modifier.height(24.dp))
 
-                // ─ 이번 주 통계 카드 ─
+                // 📈 주간 통계
                 state.weeklySummary?.let { ws ->
                     Card(
                         shape = RoundedCornerShape(16.dp),
@@ -248,14 +258,10 @@ fun HomeScreen(onStartWalk: () -> Unit = {}) {
                         ) {
                             Text("이번 주 총 산책", color = Color.White)
                             Spacer(Modifier.height(8.dp))
-                            Text(
-                                "${ws.count}회",
-                                color = Color.White,
-                                style = MaterialTheme.typography.headlineMedium
-                            )
+                            Text("${ws.count}회", color = Color.White, style = MaterialTheme.typography.headlineMedium)
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                "총 ${"%.1f".format(ws.totalDistanceKm)}km · ${ws.totalTimeMin/60}시간 ${ws.totalTimeMin%60}분",
+                                "총 ${"%.1f".format(ws.totalDistanceKm)}km · ${ws.totalTimeMin / 60}시간 ${ws.totalTimeMin % 60}분",
                                 color = Color.White,
                                 textAlign = TextAlign.Center
                             )
