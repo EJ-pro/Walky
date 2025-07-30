@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.rememberAsyncImagePainter
 import com.example.walky.R
+import com.example.walky.ui.components.PetModeToggle
 import com.example.walky.ui.home.HomeViewModel
 import java.time.format.DateTimeFormatter
 
@@ -50,7 +51,6 @@ fun HomeScreen(onStartWalk: () -> Unit = {}) {
         locationLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         vm.fetchLocationAndWeather(context)
     }
-
     Scaffold(
         topBar = {
             Column {
@@ -80,17 +80,16 @@ fun HomeScreen(onStartWalk: () -> Unit = {}) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("일반 모드", color = if (!isPetMode) Color.Black else Color.Gray)
-                    Switch(
-                        checked = isPetMode,
-                        onCheckedChange = { isPetMode = it }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                )  {
+                    PetModeToggle(
+                        isPetMode = isPetMode,
+                        onToggle = { isPetMode = it }
                     )
-                    Text("반려견 모드", color = if (isPetMode) Color.Black else Color.Gray)
                 }
+
             }
         }
     ) { inner ->
