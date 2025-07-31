@@ -9,7 +9,7 @@ pluginManagement {
         }
         mavenCentral()
         gradlePluginPortal()
-
+        maven("https://devrepo.kakao.com/nexus/repository/kakaomap-releases/")
     }
     plugins {
         id("com.android.application") version "8.4.0" apply false
@@ -18,11 +18,15 @@ pluginManagement {
     }
 }
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
         google()
         mavenCentral()
-        maven { url = uri("https://devrepo.kakao.com/nexus/content/groups/public") }
+        // ✅ 카카오 로그인 SDK (v2-* 용)
+        maven { url = uri("https://devrepo.kakao.com/nexus/content/groups/public/") }
+
+        // ✅ 벡터맵 SDK
+        maven("https://devrepo.kakao.com/nexus/repository/kakaomap-releases/")
     }
 }
 

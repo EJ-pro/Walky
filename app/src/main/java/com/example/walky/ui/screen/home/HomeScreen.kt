@@ -3,6 +3,7 @@
 package com.example.walky.ui.screen.home
 
 import android.Manifest
+import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
 import androidx.compose.foundation.Image
@@ -33,6 +34,7 @@ import coil.compose.rememberAsyncImagePainter
 import com.example.walky.R
 import com.example.walky.ui.components.PetModeToggle
 import com.example.walky.ui.home.HomeViewModel
+import com.example.walky.ui.screen.map.MapScreen
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -207,7 +209,9 @@ fun HomeScreen(onStartWalk: () -> Unit = {}) {
 
                 // 🚶 산책 시작 버튼
                 Button(
-                    onClick = onStartWalk,
+                    onClick = {
+
+                    },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00C853)),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
