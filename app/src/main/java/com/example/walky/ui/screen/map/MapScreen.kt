@@ -1,10 +1,12 @@
 package com.example.walky.ui.screen.map
 
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.drawable.Drawable
+import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.graphics.Color as AndroidColor
 import android.widget.Toast
-import androidx.appcompat.content.res.AppCompatResources
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -12,62 +14,107 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.example.walky.R
-import com.kakao.vectormap.*
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.walky.ui.home.HomeViewModel
+import com.kakao.vectormap.MapView
+import com.kakao.vectormap.KakaoMap
+import com.kakao.vectormap.MapLifeCycleCallback
+import com.kakao.vectormap.KakaoMapReadyCallback
 import com.kakao.vectormap.camera.CameraUpdateFactory
-import com.kakao.vectormap.label.LabelOptions
-import com.kakao.vectormap.label.LabelStyle
-import com.kakao.vectormap.label.LabelStyles
-
+import com.kakao.vectormap.shape.Polyline
+import com.kakao.vectormap.shape.MapPoints
+import com.kakao.vectormap.shape.PolylineOptions
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(
-    locationX: Double = 127.108678,
-    locationY: Double = 37.402111
+    viewModel: MapViewModel = viewModel(),
+    homeViewModel: HomeViewModel = viewModel()
 ) {
-    val context = LocalContext.current
-    var isPaused by remember { mutableStateOf(false) }
+    val context    = LocalContext.current
 
-    Scaffold{ padding ->
+    // 센서 매니저 & 스텝 카운터 센서
+    val sensorManager = remember { context.getSystemService(Context.SENSOR_SERVICE) as SensorManager }
+    val stepSensor    = remember { sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER) }
+
+    // 센서 이벤트 리스너 등록
+    DisposableEffect(sensorManager, stepSensor) {
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) {
+                event?.values?.getOrNull(0)?.let { viewModel.onStepChanged(it) }
+            }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+        stepSensor?.also { sensorManager.registerListener(listener, it, SensorManager.SENSOR_DELAY_NORMAL) }
+        onDispose {
+            sensorManager.unregisterListener(listener)
+        }
+    }
+    // 스톱워치·센서·거리·칼로리 상태
+    val duration   by viewModel.durationText.collectAsState()
+    val isPaused   by viewModel.isPaused.collectAsState()
+    val isStarted  by viewModel.isStarted.collectAsState()
+    val stepCount  by viewModel.stepCount.collectAsState()
+    val distanceKm by viewModel.distanceKm.collectAsState()
+    val calorie    by viewModel.calorie.collectAsState()
+
+    // HomeViewModel 에서 가져온 초깃값(권한 동의 후 위치)
+    val uiState    by homeViewModel.uiState.collectAsState()
+
+    // 산책 경로 점 모음
+    val pathPoints by viewModel.pathPoints.collectAsState()
+
+    // 현재 획득된 위치(Flow). null 이면 uiState.location, 그것도 없으면 기본 좌표
+    val currentLoc = viewModel.currentLocation.collectAsState().value
+        ?: uiState.location
+        ?: (37.402111 to 127.108678)
+    val (lat, lon) = currentLoc
+
+    // 맵 진입 즉시: 권한 요청 → 내 위치로 추적 시작
+    LaunchedEffect(Unit) {
+        homeViewModel.fetchLocation(context)           // 위치 권한 요청
+        viewModel.startLocationTracking(context)      // FusedLocation 구동
+    }
+
+    Scaffold { padding ->
         Column(
-            modifier = Modifier
+            Modifier
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // 🗺️ 지도 (상단)
             LectureKakaoMap(
-                modifier = Modifier
+                modifier  = Modifier
                     .fillMaxWidth()
-                    .weight(0.7f),
-                locationX = locationX,
-                locationY = locationY
+                    .weight(0.6f),
+                latitude  = lat,
+                longitude = lon,
+                path      = pathPoints
             )
-
-            // 🏃 하단: 걷기 트래킹 UI (30%)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(0.3f)
-            ) {
+            Box(Modifier.fillMaxWidth().weight(0.4f)) {
                 WalkTrackingBottomBar(
-                    stepCount = 2847,
-                    distanceKm = 1.8,
-                    durationText = "23:45",
-                    calorie = 142,
-                    isPaused = isPaused,
-                    onPauseToggle = { isPaused = !isPaused },
-                    onEndWalk = {
+                    stepCount     = stepCount,
+                    distanceKm    = distanceKm,
+                    durationText  = duration,
+                    calorie       = calorie,
+                    isPaused      = isPaused,
+                    isStarted     = isStarted,
+                    onPauseToggle = {
+                        if (!isStarted) viewModel.startStopwatch()
+                        else viewModel.togglePause()
+                    },
+                    onEndWalk     = {
+                        viewModel.resetStopwatch()
                         Toast.makeText(context, "산책 종료", Toast.LENGTH_SHORT).show()
                     },
-                    isSafeZone = true
+                    isSafeZone    = true
                 )
             }
         }
@@ -76,62 +123,68 @@ fun MapScreen(
 
 @Composable
 fun LectureKakaoMap(
-    modifier: Modifier = Modifier,
-    locationX: Double,
-    locationY: Double,
+    modifier: Modifier,
+    latitude: Double,
+    longitude: Double,
+    path: List<Pair<Double, Double>>
 ) {
-    val context = LocalContext.current
-    val mapView = remember { MapView(context) }
+    val context   = LocalContext.current
+    val mapView   = remember { MapView(context) }
+    var kakaoMap  by remember { mutableStateOf<KakaoMap?>(null) }
+    val polyline  = remember { mutableStateOf<Polyline?>(null) }
 
-    LaunchedEffect(mapView) {
+    // 1) 맵 초기화는 최초 한 번만
+    LaunchedEffect(Unit) {
         mapView.start(
             object : MapLifeCycleCallback() {
                 override fun onMapDestroy() {}
-                override fun onMapError(exception: Exception?) {
-                    Toast.makeText(context, "지도 오류: $exception", Toast.LENGTH_LONG).show()
+                override fun onMapError(e: Exception?) {
+                    Toast.makeText(context, "지도 오류: $e", Toast.LENGTH_LONG).show()
                 }
             },
             object : KakaoMapReadyCallback() {
-                override fun onMapReady(kakaoMap: KakaoMap) {
-                    val cameraUpdate = CameraUpdateFactory.newCenterPosition(
-                        LatLng.from(locationY, locationX)
-                    )
-                    kakaoMap.moveCamera(cameraUpdate)
-
-                    val drawable = AppCompatResources.getDrawable(context, R.drawable.ic_kakao)
-                    if (drawable != null) {
-                        val bitmap = drawableToBitmap(drawable)
-                        val labelStyle = LabelStyle.from(bitmap)
-                        val styles = kakaoMap.labelManager?.addLabelStyles(LabelStyles.from(labelStyle))
-                        val options = LabelOptions.from(LatLng.from(locationY, locationX)).setStyles(styles)
-                        kakaoMap.labelManager?.layer?.addLabel(options)
-                    }
+                override fun onMapReady(map: KakaoMap) {
+                    kakaoMap = map
                 }
-
-                override fun getPosition(): LatLng {
-                    return LatLng.from(locationY, locationX)
-                }
+                override fun getPosition() =
+                    com.kakao.vectormap.LatLng.from(latitude, longitude)
             }
         )
     }
 
-    AndroidView(
-        factory = { mapView },
-        modifier = modifier
-    )
+    // 2) 위치(latitude, longitude)가 바뀔 때마다 카메라 이동
+    LaunchedEffect(latitude, longitude) {
+        kakaoMap?.moveCamera(
+            CameraUpdateFactory.newCenterPosition(
+                com.kakao.vectormap.LatLng.from(latitude, longitude)
+            )
+        )
+    }
+
+    // 3) 경로가 2점 이상 모였을 때만 한 번 Polyline 생성 → 이후 changeMapPoints
+    LaunchedEffect(path) {
+        val map   = kakaoMap ?: return@LaunchedEffect
+        if (path.size < 2) return@LaunchedEffect
+
+        val layer = map.getShapeManager()?.getLayer() ?: return@LaunchedEffect
+        val pts   = path.map { (la, lo) ->
+            com.kakao.vectormap.LatLng.from(la, lo)
+        }
+        val mapPts = MapPoints.fromLatLng(pts)
+
+        if (polyline.value == null) {
+            polyline.value = layer.addPolyline(
+                PolylineOptions.from(mapPts, 5f, AndroidColor.RED)
+            )
+        } else {
+            polyline.value?.changeMapPoints(listOf(mapPts))
+        }
+    }
+
+    AndroidView(factory = { mapView }, modifier = modifier)
 }
 
-fun drawableToBitmap(drawable: Drawable): Bitmap {
-    val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 64
-    val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 64
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    drawable.setBounds(0, 0, canvas.width, canvas.height)
-    drawable.draw(canvas)
-    return bitmap
-}
 
-// ✅ 걷기 트래킹 UI (하단)
 @Composable
 fun WalkTrackingBottomBar(
     stepCount: Int,
@@ -139,132 +192,67 @@ fun WalkTrackingBottomBar(
     durationText: String,
     calorie: Int,
     isPaused: Boolean,
+    isStarted: Boolean,
     onPauseToggle: () -> Unit,
     onEndWalk: () -> Unit,
     isSafeZone: Boolean
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceAround
-        ) {
-            WalkStatItem(value = "$stepCount", label = "걸음")
-            WalkStatItem(value = String.format("%.1f", distanceKm), label = "km")
-            WalkStatItem(value = durationText, label = "시간")
+    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+            WalkStatItem("$stepCount", "걸음")
+            WalkStatItem(String.format("%.2f", distanceKm), "km")
+            WalkStatItem(durationText, "시간")
         }
-
-        Spacer(modifier = Modifier.height(11.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center
-        ) {
-            StatCard(
-                icon = Icons.Default.Home,
-                value = "$calorie",
-                label = "칼로리",
-                iconColor = Color(0xFFFF6F00)
-            )
+        Spacer(Modifier.height(16.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+            StatCard(Icons.Default.Star, "$calorie", "칼로리", Color(0xFFFF6F00))
         }
-
-        Spacer(modifier = Modifier.height(1.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            Button(
-                onClick = onPauseToggle,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFFFC107),
-                    contentColor = Color.Black
-                )
-            ) {
+        Spacer(Modifier.height(16.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            Button(onClick = onPauseToggle, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFC107))) {
                 Icon(
-                    imageVector = if (isPaused) Icons.Default.PlayArrow else    Icons.Default.Home,
+                    imageVector = when {
+                        !isStarted -> Icons.Default.PlayArrow
+                        isPaused -> Icons.Default.PlayArrow
+                        else -> Icons.Default.Home
+                    },
                     contentDescription = null
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(if (isPaused) "재시작" else "일시정지")
-            }
-
-            Button(
-                onClick = onEndWalk,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFD32F2F),
-                    contentColor = Color.White
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    when {
+                        !isStarted -> "시작"
+                        isPaused -> "재시작"
+                        else -> "일시정지"
+                    }
                 )
-            ) {
-                Icon(imageVector =
-                    Icons.Default.Home, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Button(onClick = onEndWalk, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))) {
+                Icon(Icons.Default.Star, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
                 Text("종료")
             }
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    color = if (isSafeZone) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
-                    shape = RoundedCornerShape(8.dp)
-                )
-                .padding(12.dp)
-        )
     }
 }
 
 @Composable
 fun WalkStatItem(value: String, label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = Color.Gray
-        )
+        Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text(label, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
     }
 }
 
 @Composable
-fun StatCard(
-    icon: ImageVector,
-    value: String,
-    label: String,
-    iconColor: Color
-) {
-    Card(
-        modifier = Modifier
-            .width(150.dp)
-            .height(80.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(12.dp)
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = iconColor,
-                modifier = Modifier.size(32.dp)
-            )
-            Spacer(modifier = Modifier.width(12.dp))
+fun StatCard(icon: ImageVector, value: String, label: String, iconColor: Color) {
+    Card(Modifier.width(80.dp).height(80.dp), shape = RoundedCornerShape(12.dp)) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(8.dp))
             Column {
-                Text(text = value, style = MaterialTheme.typography.titleLarge)
-                Text(text = label, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                Text(value, style = MaterialTheme.typography.titleMedium)
+                Text(label, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
             }
         }
     }
