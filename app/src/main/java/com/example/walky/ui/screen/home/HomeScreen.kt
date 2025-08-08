@@ -14,10 +14,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,221 +47,209 @@ fun HomeScreen(
     val locLauncher = rememberLauncherForActivityResult(RequestPermission()) { granted ->
         if (granted) vm.fetchLocationAndWeather(context)
     }
-    LaunchedEffect(Unit) {
-        locLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-    }
+    LaunchedEffect(Unit) { locLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) }
 
     var expanded by remember { mutableStateOf(false) }
 
     LazyColumn(
-        modifier = Modifier
+        Modifier
             .fillMaxSize()
-            .background(Color(0xFFF5F5F5))
+            .background(Color(0xFFF5F5F5)),
+        verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        // ── SECTION 1: 검은 배경 (인사말 + 토글) ─────────────
+        // ── 통합 SECTION: 검은 배경 카드 (인사말 + Today 토글 + Today 내용) ─────────────
         item {
-            Column(
-                modifier = Modifier
+            Card(
+                Modifier
                     .fillMaxWidth()
-                    .background(Color.Black)
-                    .padding(16.dp)
+                    .animateContentSize(),
+                shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.Black),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "Hello, $userName",
-                            color = Color.White,
-                            style = MaterialTheme.typography.headlineSmall
-                        )
-                        Text(
-                            "${userName}님, 오늘도 걸어볼까요?",
-                            color = Color(0xFFBEE7A5),
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                    IconButton(onClick = { /* 알림 */ }) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_kakao),
-                            contentDescription = null,
-                            tint = Color.White
-                        )
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Image(
-                        painter = rememberAsyncImagePainter(state.dog?.avatarUrl ?: ""),
-                        contentDescription = "프로필",
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape),
-                        contentScale = ContentScale.Crop
-                    )
-                }
-
-                Icon(
-                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier
+                Column(
+                    Modifier
                         .fillMaxWidth()
-                        .wrapContentWidth(Alignment.CenterHorizontally)
-                        .clickable { expanded = !expanded }
-                        .padding(top = 8.dp)
-                )
-            }
-        }
-
-        // ── SECTION 2: F5F5F5 배경 (Today 카드 + 챌린지 + 모드 토글) ────
-        item {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF000000))
-                    .padding(16.dp)
-            ) {
-                // Today 카드 (펼쳐졌을 때만)
-                if (expanded) {
-                    Card(
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .animateContentSize()
+                        .padding(16.dp)
+                ) {
+                    // 1) 인사말
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(Modifier.padding(16.dp)) {
+                        Column(Modifier.weight(1f)) {
                             Text(
-                                "Today",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                                "Hello, $userName",
+                                color = Color.White,
+                                style = MaterialTheme.typography.headlineSmall
                             )
-                            Spacer(Modifier.height(12.dp))
+                            Text(
+                                "$userName 님, 오늘도 걸어볼까요?",
+                                color = Color(0xFFBEE7A5),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        IconButton(onClick = { /* 알림 */ }) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_kakao),
+                                contentDescription = null,
+                                tint = Color.White
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Image(
+                            painter = rememberAsyncImagePainter(state.dog?.avatarUrl ?: ""),
+                            contentDescription = "프로필",
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
 
-                            state.weather?.let { w ->
+                    // 2) Today 내용 (열렸을 때)
+                    if (expanded) {
+                        Spacer(Modifier.height(16.dp))
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateContentSize(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                        ) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text(
+                                    "Today",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Black
+                                )
+                                Spacer(Modifier.height(12.dp))
+
+                                state.weather?.let { w ->
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(R.drawable.ic_sun),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(40.dp),
+                                            tint = Color.Unspecified
+                                        )
+                                        Spacer(Modifier.width(12.dp))
+                                        Column {
+                                            Text(w.city, fontWeight = FontWeight.SemiBold, color = Color.Black)
+                                            Text(
+                                                "${w.tempC}°C  ${w.description}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = Color.DarkGray
+                                            )
+                                        }
+                                        Spacer(Modifier.weight(1f))
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text("맑음", style = MaterialTheme.typography.bodySmall, color = Color.DarkGray)
+                                            Text("습도 ${w.humidity}%", style = MaterialTheme.typography.bodySmall, color = Color.DarkGray)
+                                        }
+                                    }
+                                }
+
+                                Spacer(Modifier.height(16.dp))
+
+                                Text(
+                                    "오늘의 걸음 통계",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Black
+                                )
+                                Spacer(Modifier.height(4.dp))
                                 Row(
                                     Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.ic_sun),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(48.dp),
-                                        tint = Color.Unspecified
+                                    Text("${state.todaySteps}걸음", fontWeight = FontWeight.Bold, color = Color.Black)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        "${"%.1f".format(state.todayDistanceKm)}km",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.DarkGray
                                     )
-                                    Spacer(Modifier.width(12.dp))
-                                    Column {
-                                        Text(w.city, fontWeight = FontWeight.SemiBold)
-                                        Text(
-                                            "${w.tempC}°C  ${w.description}",
-                                            style = MaterialTheme.typography.bodySmall
-                                        )
-                                    }
-                                    Spacer(Modifier.weight(1f))
-                                    Column(horizontalAlignment = Alignment.End) {
-                                        Text("맑음", style = MaterialTheme.typography.bodySmall)
-                                        Text(
-                                            "습도 ${w.humidity}%",
-                                            style = MaterialTheme.typography.bodySmall
-                                        )
-                                    }
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("${state.todayDurationMin}분", style = MaterialTheme.typography.bodySmall, color = Color.DarkGray)
                                 }
-                            }
 
-                            Spacer(Modifier.height(16.dp))
-
-                            Text("오늘의 걸음 통계", fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.height(4.dp))
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("${state.todaySteps}걸음", fontWeight = FontWeight.Bold)
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    "${"%.1f".format(state.todayDistanceKm)}km",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    "${state.todayDurationMin}분",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                            Slider(
-                                value = (state.todaySteps / state.stepGoal.toFloat()).coerceIn(
-                                    0f,
-                                    1f
-                                ),
-                                onValueChange = {},
-                                enabled = false,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            Button(
-                                onClick = onStartWalk,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(44.dp),
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.Black)
-                            ) {
-                                Text("Start", color = Color.White)
+                                Spacer(Modifier.height(16.dp))
                             }
                         }
+
+                        Spacer(Modifier.height(16.dp))
                     }
-                    Spacer(Modifier.height(16.dp))
+
+                    // 3) 토글 화살표
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .wrapContentWidth(Alignment.CenterHorizontally)
+                            .clickable { expanded = !expanded }
+                    )
                 }
             }
         }
+
+
+        // 4️⃣ 연그레이: Challenge + 모드 토글
         item {
             Column(
-                modifier = Modifier
+                Modifier
                     .fillMaxWidth()
                     .background(Color(0xFFF5F5F5))
                     .padding(16.dp)
             ) {
-                // Today Challenge 카드
                 Card(
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = Color(0xFFFAF3C0)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(Modifier.padding(16.dp)) {
                         Column(Modifier.weight(1f)) {
-                            Text(
-                                "Today Challenge",
+                            Text("Today Challenge",
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Black
                             )
                             Spacer(Modifier.height(8.dp))
                             Card(
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(containerColor = Color.White)
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
                                     "• 반려동물 산책 인증!\n강아지나 고양이와 산책 포토를 찍어보세요!\n귀여움과 건강을 동시에.",
                                     Modifier.padding(12.dp),
-                                    style = MaterialTheme.typography.bodySmall
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.DarkGray
                                 )
                             }
                         }
                         Spacer(Modifier.width(12.dp))
                         Image(
-                            painter = painterResource(R.drawable.ic_kakao),
+                            painterResource(R.drawable.ic_kakao),
                             contentDescription = null,
                             modifier = Modifier.size(80.dp),
                             contentScale = ContentScale.Crop
                         )
                     }
                 }
-
                 Spacer(Modifier.height(16.dp))
-
-                // 모드 토글
                 Row(
-                    horizontalArrangement = Arrangement.End,
-                    modifier = Modifier.fillMaxWidth()
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
                 ) {
                     val modes = listOf("MY", "PET")
                     var selected by remember { mutableStateOf("MY") }
@@ -285,23 +273,21 @@ fun HomeScreen(
             }
         }
 
-        // ── SECTION 3: 흰 배경 (최근 산책 기록) ────────────────
+        // 5️⃣ 흰 배경: 최근 산책 기록
         item {
             Column(
-                modifier = Modifier
+                Modifier
                     .fillMaxWidth()
                     .background(Color.White)
                     .padding(16.dp)
             ) {
-                Text(
-                    "최근 산책 기록",
+                Text("최근 산책 기록",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = Color.Black
                 )
             }
         }
-
         items(state.recentWalks) { walk ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -328,10 +314,10 @@ fun HomeScreen(
             }
         }
 
-        // 마지막 여백
+        // 끝 여백
         item {
             Spacer(
-                modifier = Modifier
+                Modifier
                     .fillMaxWidth()
                     .height(32.dp)
                     .background(Color.White)
