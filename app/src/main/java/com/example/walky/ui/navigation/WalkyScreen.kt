@@ -1,17 +1,20 @@
 package com.example.walky.ui.navigation
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.annotation.DrawableRes
+import com.example.walky.R
 
-sealed class WalkyScreen(val route: String, val label: String, val icon: ImageVector) {
-    object Home : WalkyScreen("home", "홈", Icons.Default.Home)
-    object Walks : WalkyScreen("walks", "기록", Icons.Default.List)
-    object Map : WalkyScreen("map", "지도", Icons.Default.Home)
-    object Community : WalkyScreen("community", "커뮤니티", Icons.Default.Home)
-    object Profile : WalkyScreen("profile", "프로필", Icons.Default.Person)
+sealed class WalkyScreen(
+    val route: String,
+    val label: String,
+    @DrawableRes val iconRes: Int
+) {
+    object Home      : WalkyScreen("home",      "HOME",       R.drawable.ic_home)
+    object Map       : WalkyScreen("map",       "MAP",     R.drawable.ic_map)
+    object Walks     : WalkyScreen("walks",     "HISTORY",     R.drawable.ic_history)
+    object Community : WalkyScreen("community", "CHAT", R.drawable.ic_chat)
+    object Profile   : WalkyScreen("profile",   "MY",   R.drawable.ic_my)
 
     companion object {
-        val items = listOf(Walks, Map, Home, Community, Profile)
+        val items = listOf(Home, Map, Walks, Community, Profile)
     }
 }

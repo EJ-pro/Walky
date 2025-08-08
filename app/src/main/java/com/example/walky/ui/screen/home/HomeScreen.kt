@@ -180,6 +180,12 @@ fun HomeScreen(
                                 }
 
                                 Spacer(Modifier.height(16.dp))
+                                Slider(
+                                    value = (state.todaySteps / state.stepGoal.toFloat()).coerceIn(0f,1f),
+                                    onValueChange = {},
+                                    enabled = false,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
                             }
                         }
 
