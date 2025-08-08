@@ -7,24 +7,26 @@ import com.example.walky.ui.screen.splash.SplashScreen
 
 @Composable
 fun WalkyNav() {
-    val navController = rememberNavController()
+    val rootNavController = rememberNavController()
 
     NavHost(
-        navController = navController,
+        navController = rootNavController,
         startDestination = "splash"
     ) {
         composable("splash") {
-            SplashScreen(navController)
+            SplashScreen(rootNavController)
         }
         composable("login") {
             LoginScreen(onSuccess = {
-                navController.navigate("main") {
+                rootNavController.navigate("main") {
                     popUpTo("login") { inclusive = true }
                 }
             })
         }
         composable("main") {
-            MainScaffoldNav()
+            // 루트 NavController 를 하위로 전달
+            MainScaffoldNav(rootNavController)
         }
     }
 }
+

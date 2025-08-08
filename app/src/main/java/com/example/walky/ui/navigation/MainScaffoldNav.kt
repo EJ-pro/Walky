@@ -17,6 +17,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.*
 import com.example.walky.R
 import com.example.walky.ui.screen.chat.ChatScreen
@@ -26,7 +27,7 @@ import com.example.walky.ui.screen.profile.ProfileScreen
 import com.example.walky.ui.screen.walk.WalkHistoryScreen
 
 @Composable
-fun MainScaffoldNav() {
+fun MainScaffoldNav(rootNavController: NavHostController) {
     val navController = rememberNavController()
     val currentBackStack by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStack?.destination?.route
@@ -104,7 +105,7 @@ fun MainScaffoldNav() {
             composable(WalkyScreen.Map.route)       { MapScreen() }
             composable(WalkyScreen.Walks.route)     { WalkHistoryScreen() }
             composable(WalkyScreen.Community.route) { ChatScreen() }
-            composable(WalkyScreen.Profile.route)   { ProfileScreen() }
+            composable(WalkyScreen.Profile.route)   { ProfileScreen(navController = rootNavController) }
         }
     }
 }

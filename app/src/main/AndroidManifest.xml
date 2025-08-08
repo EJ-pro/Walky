@@ -25,6 +25,11 @@
         <meta-data
             android:name="com.kakao.maps.openapi.key"
             android:value="@string/kakao_map_key" />
+
+        <meta-data
+            android:name="com.google.android.gms.version"
+            android:value="@integer/google_play_services_version" />
+
         <!-- Kakao 로그인 콜백용 Activity -->
         <activity
             android:name="com.kakao.sdk.auth.AuthCodeHandlerActivity"

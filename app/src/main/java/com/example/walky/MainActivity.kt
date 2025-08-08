@@ -23,6 +23,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val prefs = LoginPrefs(this)
         printKeyHash()
+        printAppSha1()
         // Firebase/Kakao 초기화
         FirebaseApp.initializeApp(this)
         KakaoSdk.init(this, getString(R.string.kakao_native_app_key))
@@ -34,6 +35,34 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+    private fun printAppSha1() {
+        try {
+            val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNATURES)
+            }
+
+            val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                packageInfo.signingInfo?.apkContentsSigners
+            } else {
+                @Suppress("DEPRECATION")
+                packageInfo.signatures
+            }
+
+            val md = MessageDigest.getInstance("SHA1")
+            signatures?.forEach { sig ->
+                md.update(sig.toByteArray())
+                val sha1 = md.digest().joinToString(separator = ":") { byte ->
+                    String.format("%02X", byte)
+                }
+                Log.d("AppSHA1", sha1)
+            }
+        } catch (e: Exception) {
+            Log.e("AppSHA1", "SHA1 계산 실패", e)
         }
     }
     @RequiresApi(Build.VERSION_CODES.P)
@@ -50,6 +79,7 @@ class MainActivity : ComponentActivity() {
             if (signers != null) {
                 for (sig in signers) {
                     val md = MessageDigest.getInstance("SHA-1")
+
                     md.update(sig.toByteArray())
                     val hash = Base64.encodeToString(md.digest(), Base64.NO_WRAP)
                     Log.d("KeyHash", hash)
