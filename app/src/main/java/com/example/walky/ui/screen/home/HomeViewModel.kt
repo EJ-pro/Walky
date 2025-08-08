@@ -9,6 +9,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.ListenerRegistration
 import com.kakao.sdk.user.UserApiClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,13 +55,21 @@ class HomeViewModel(
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
+    private var userListener: ListenerRegistration? = null
+
+    fun refreshAll(context: Context) {
+        loadProfileImage(context)
+        loadTodayStats()
+        fetchLocationAndWeather(context)
+        loadUserName()
+    }
+
     init {
         loadUserProfile()
         loadTodayStats()
         loadRecentWalks()
     }
     private fun loadRecentWalks() {
-        // TODO: Firestore 에서 진짜 불러오실 때 여기를 채워 주세요
         viewModelScope.launch {
             _uiState.update { it.copy(
                 recentWalks = listOf(
@@ -70,7 +79,7 @@ class HomeViewModel(
             ) }
         }
     }
-    /** 닉네임·프로필URL 불러오기 */
+
     private fun loadUserProfile() {
         val user = auth.currentUser ?: return
         db.collection("users")
@@ -90,7 +99,17 @@ class HomeViewModel(
             }
     }
 
-
+    fun loadUserName() {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        FirebaseFirestore.getInstance()
+            .collection("users")
+            .document(uid)
+            .get()
+            .addOnSuccessListener { snap ->
+                val name = snap.getString("displayName") ?: ""
+                _uiState.update { it.copy(userName = name) }
+            }
+    }
 
     /** Google/Kakao 프로필 이미지 fetch (Context 필요) */
     fun loadProfileImage(context: Context) {

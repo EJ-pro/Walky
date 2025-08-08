@@ -38,7 +38,8 @@ class WeatherRepository {
                 .addPathSegments("data/2.5/weather")
                 .addQueryParameter("lat", lat.toString())
                 .addQueryParameter("lon", lon.toString())
-                .addQueryParameter("units", "metric")       // 섭씨 온도
+                .addQueryParameter("units", "metric")          // 섭씨 온도
+                .addQueryParameter("lang", "kr")
                 .addQueryParameter("appid", apiKey)
                 .build()
 

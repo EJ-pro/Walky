@@ -47,11 +47,23 @@ fun HomeScreen(
     val vm: HomeViewModel = viewModel()
     val state by vm.uiState.collectAsState()
     val context = LocalContext.current
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
 
     // 초기 로드
     LaunchedEffect(Unit) {
         vm.loadProfileImage(context)
         vm.loadTodayStats()
+
+    }
+    // ② Every time the screen becomes visible again (navigation back, app resume, etc.)
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                vm.refreshAll(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // Pretendard 폰트
@@ -142,19 +154,6 @@ fun HomeScreen(
 
                 Spacer(Modifier.height(24.dp))
 
-                // Today 토글
-                Icon(
-                    painter = painterResource(
-                        id = if (expanded) R.drawable.ic_arrow_up else R.drawable.ic_arrow_down
-                    ),
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .wrapContentWidth(Alignment.CenterHorizontally)
-                        .clickable { expanded = !expanded }
-                        .size(30.dp)
-                )
 
                 if (expanded) {
                     Spacer(Modifier.height(16.dp))
@@ -301,9 +300,22 @@ fun HomeScreen(
                     }
                 }
             }
+            // Today 토글
+            Icon(
+                painter = painterResource(
+                    id = if (expanded) R.drawable.ic_arrow_up else R.drawable.ic_arrow_down
+                ),
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .wrapContentWidth(Alignment.CenterHorizontally)
+                    .clickable { expanded = !expanded }
+                    .size(30.dp)
+            )
+            Spacer(Modifier.height(16.dp))
         }
 
-        Spacer(Modifier.height(16.dp))
         // 4️⃣ 챌린지 & 모드 토글
         Spacer(Modifier.height(16.dp))
         Column(
