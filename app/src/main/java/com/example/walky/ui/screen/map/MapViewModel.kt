@@ -74,6 +74,12 @@ class MapViewModel : ViewModel() {
         _pathPoints.value = emptyList()
     }
 
+    private val _startPoint = MutableStateFlow<Pair<Double, Double>?>(null)
+    val startPoint: StateFlow<Pair<Double, Double>?> = _startPoint
+    fun recordStartLocation(lat: Double, lon: Double) {
+        _startPoint.value = lat to lon
+    }
+
     private fun formatTime(sec: Int): String {
         val m = sec / 60
         val s = sec % 60
@@ -112,8 +118,8 @@ class MapViewModel : ViewModel() {
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
         val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3_000).build()
         locationCallback = object : LocationCallback() {
-            override fun onLocationResult(result: LocationResult) {
-                result.lastLocation?.let { loc ->
+            override fun onLocationResult(res: LocationResult) {
+                res.lastLocation?.let { loc ->
                     val cur = loc.latitude to loc.longitude
                     _currentLocation.value = cur
                     updateTrackingData(cur.first, cur.second)
@@ -122,7 +128,6 @@ class MapViewModel : ViewModel() {
         }
         fusedLocationClient.requestLocationUpdates(req, locationCallback, Looper.getMainLooper())
     }
-
     fun stopLocationTracking() {
         if (::fusedLocationClient.isInitialized && ::locationCallback.isInitialized) {
             fusedLocationClient.removeLocationUpdates(locationCallback)
@@ -130,16 +135,25 @@ class MapViewModel : ViewModel() {
     }
 
     private fun updateTrackingData(lat: Double, lon: Double) {
-        val cur = lat to lon
         lastLocation?.let { prev ->
-            val dist = calculateDistance(prev.first, prev.second, lat, lon)
+            val dist = run {
+                val R = 6371.0
+                val dLat = Math.toRadians(lat - prev.first)
+                val dLon = Math.toRadians(lon - prev.second)
+                val a = sin(dLat/2).pow(2.0) +
+                        cos(Math.toRadians(prev.first)) *
+                        cos(Math.toRadians(lat)) *
+                        sin(dLon/2).pow(2.0)
+                2 * atan2(sqrt(a), sqrt(1 - a)) * R
+            }
             _distanceKm.value += dist
             _calorie.value = (_distanceKm.value * 55).toInt()
         }
-        lastLocation = cur
-        path.add(cur)
+        lastLocation = lat to lon
+        path.add(lat to lon)
         _pathPoints.value = path.toList()
     }
+
 
     private fun calculateDistance(
         lat1: Double, lon1: Double,
