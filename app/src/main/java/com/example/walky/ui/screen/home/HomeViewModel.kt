@@ -1,10 +1,12 @@
 package com.example.walky.ui.home
 
 import android.content.Context
+import androidx.health.connect.client.HealthConnectClient
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.walky.data.LocationRepository
 import com.example.walky.data.WeatherRepository
+import com.example.walky.data.health.HealthConnectRepository
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -43,7 +45,7 @@ data class HomeUiState(
     val humidity: Int = 0,
 
     // 오늘 요약 (하루 전체 합산)
-    val todaySteps: Int = 0,
+    val todaySteps: Int = 0,          // ← Health Connect가 있으면 여기 덮어씀
     val todayDistanceKm: Double = 0.0,
     val todayDurationMin: Int = 0,
     val stepGoal: Int = 10000,
@@ -56,11 +58,16 @@ data class HomeUiState(
 
     val isLoading: Boolean = false,
     val error: String? = null,
+
+    // Health Connect 상태 표시용(선택)
+    val healthAvailable: Boolean = false,
+    val healthGranted: Boolean = false,
 )
 
 class HomeViewModel(
     private val locRepo: LocationRepository = LocationRepository(),
-    private val weatherRepo: WeatherRepository = WeatherRepository()
+    private val weatherRepo: WeatherRepository = WeatherRepository(),
+    private val hcRepo: HealthConnectRepository = HealthConnectRepository()
 ) : ViewModel() {
 
     private val auth = FirebaseAuth.getInstance()
@@ -73,18 +80,40 @@ class HomeViewModel(
     private var walksListener: ListenerRegistration? = null
     private var todayListener: ListenerRegistration? = null
 
+
     init {
-        // 사용자 프로필(닉네임/이미지) 로드
         loadUserProfile()
-        // 최근 산책 목록 (오직 리스트만 갱신 — 오늘 합계는 건드리지 않음)
-        observeRecentWalks()
+        observeRecentWalks() // 리스트만
     }
 
     fun refreshAll(context: Context) {
         loadProfileImage(context)
         loadUserName()
         fetchLocationAndWeather(context)
-        // 오늘 합계는 startTodayStatsListener가 실시간으로 처리
+        // 오늘 합계는 startTodayStatsListener가 처리
+        // todaySteps는 Health Connect가 허용되었다면 아래 refreshHealthSteps()로 덮어씀
+        maybeRefreshStepsFromHealthConnect(context)
+    }
+    fun maybeRefreshStepsFromHealthConnect(context: Context) {
+        val status = HealthConnectClient.getSdkStatus(context) // 또는 getSdkStatus(context, "com.google.android.apps.healthdata")
+        if (status == HealthConnectClient.SDK_AVAILABLE) {
+            viewModelScope.launch {
+                if (hcRepo.hasAllPermissions(context)) {
+                    val steps = hcRepo.readTodaySteps(context)
+                    _uiState.update { it.copy(todaySteps = steps) }
+                }
+            }
+        }
+        // SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED 인 경우는 UI에서 설치 유도 가능
+        // SDK_UNAVAILABLE 이면 해당 디바이스는 미지원
+    }
+
+    // 권한이 막 방금 허용된 뒤 호출
+    fun forceRefreshStepsFromHealthConnect(context: Context) {
+        viewModelScope.launch {
+            val steps = hcRepo.readTodaySteps(context)
+            _uiState.update { it.copy(todaySteps = steps) }
+        }
     }
 
     /** Firestore: users/{uid}/profile/info.nickname & photoUrl 우선 적용 */
@@ -106,7 +135,6 @@ class HomeViewModel(
             }
     }
 
-    /** 유저명 단독 로드 (fallback) */
     fun loadUserName() {
         val uid = auth.currentUser?.uid ?: return
         db.collection("users")
@@ -120,7 +148,6 @@ class HomeViewModel(
             }
     }
 
-    /** Google/Kakao/Firebase 사진 순으로 시도 */
     fun loadProfileImage(context: Context) {
         FirebaseAuth.getInstance().currentUser?.photoUrl?.toString()?.let { url ->
             _uiState.update { it.copy(profileImageUrl = url) }
@@ -137,7 +164,6 @@ class HomeViewModel(
         }
     }
 
-    /** 위치 & 날씨 fetch */
     fun fetchLocationAndWeather(context: Context) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
@@ -162,7 +188,7 @@ class HomeViewModel(
         }
     }
 
-    // ✅ 오늘(Asia/Seoul) 범위의 모든 산책을 합산해서 uiState에 반영
+    // ✅ 오늘(Asia/Seoul) 범위의 모든 산책 합산 (steps는 여기서도 구하지만, Health Connect가 있으면 나중에 덮어씀)
     fun startTodayStatsListener() {
         todayListener?.remove()
 
@@ -184,13 +210,10 @@ class HomeViewModel(
                 var totalDurationMs = 0L
                 var totalDistanceKm = 0.0
 
-                val MAX_REASONABLE = 36L * 60L * 60L * 1000L // 36시간
-
                 for (doc in snap.documents) {
-                    // 1) 가능한 경우 endedAt - startedAt를 신뢰
                     val s = doc.getLong("startedAt")
-                    val e = doc.getLong("endedAt")
-                    val byBounds = if (s != null && e != null && e >= s) e - s else null
+                    val eAt = doc.getLong("endedAt")
+                    val byBounds = if (s != null && eAt != null && eAt >= s) eAt - s else null
 
                     val raw = doc.getLong("durationMs")
                     val MAX = 36L * 60 * 60 * 1000
@@ -213,10 +236,11 @@ class HomeViewModel(
 
                 _uiState.update {
                     it.copy(
+                        // todaySteps는 일단 Firestore 합으로 반영하고,
+                        // Health Connect 권한 있으면 refreshHealthSteps()가 나중에 덮어씀.
                         todaySteps = totalSteps,
                         todayDistanceKm = totalDistanceKm,
-                        todayDurationMin = java.util.concurrent.TimeUnit.MILLISECONDS
-                            .toMinutes(totalDurationMs).toInt()
+                        todayDurationMin = TimeUnit.MILLISECONDS.toMinutes(totalDurationMs).toInt()
                     )
                 }
             }
@@ -240,12 +264,6 @@ class HomeViewModel(
         }
     }
 
-    /**
-     * 최근 산책 목록 (리스트만 갱신)
-     * 저장 스키마 가정: users/{uid}/walks/{autoId}
-     *  - steps:Int, distanceKm:Double, durationMs:Long, calories:Int
-     *  - startedAt:Long(ms), endedAt:Long(ms)
-     */
     private fun observeRecentWalks(limit: Long = 10) {
         val uid = auth.currentUser?.uid ?: return
         walksListener?.remove()
@@ -279,7 +297,6 @@ class HomeViewModel(
                     )
                 }
 
-                // ✅ 최근 리스트만 업데이트 (오늘 합계는 건드리지 않는다)
                 _uiState.update { it.copy(recentWalks = records) }
             }
     }

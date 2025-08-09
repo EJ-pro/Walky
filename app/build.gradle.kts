@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.example.walky"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.walky"
@@ -73,4 +73,6 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.0.0")
 
     implementation("com.kakao.maps.open:android:2.11.9")
+    implementation("androidx.health.connect:connect-client:1.2.0-alpha01")
+
 }
