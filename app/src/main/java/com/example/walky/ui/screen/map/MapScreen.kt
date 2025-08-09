@@ -1,11 +1,14 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 package com.example.walky.ui.screen.map
 
+import android.Manifest
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -17,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -33,10 +37,11 @@ import com.kakao.vectormap.label.LabelStyles
 import com.kakao.vectormap.shape.Polyline
 import com.kakao.vectormap.shape.PolylineOptions
 import com.kakao.vectormap.shape.MapPoints
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 
-/**
- * Drawable을 Bitmap으로 변환
- */
+/** Drawable → Bitmap 유틸 */
 private fun drawableToBitmap(drawable: Drawable): Bitmap {
     val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 64
     val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 64
@@ -48,6 +53,29 @@ private fun drawableToBitmap(drawable: Drawable): Bitmap {
     }
 }
 
+/** 현재 위치 1회 취득 (권한 가정) + lastLocation 폴백 */
+private fun fetchCurrentLocationOnce(
+    context: Context,
+    onResult: (Double, Double) -> Unit
+) {
+    val fused = LocationServices.getFusedLocationProviderClient(context)
+    try {
+        val cts = CancellationTokenSource()
+        fused.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cts.token)
+            .addOnSuccessListener { loc ->
+                if (loc != null) {
+                    onResult(loc.latitude, loc.longitude)
+                } else {
+                    fused.lastLocation.addOnSuccessListener { last ->
+                        if (last != null) onResult(last.latitude, last.longitude)
+                    }
+                }
+            }
+    } catch (_: SecurityException) {
+        // 권한 없는 경우 조용히 무시
+    }
+}
+
 @Composable
 fun MapScreen(
     mapViewModel: MapViewModel = viewModel(),
@@ -55,9 +83,39 @@ fun MapScreen(
 ) {
     val context = LocalContext.current
     val uiState by homeViewModel.uiState.collectAsState()
+    val actRecLauncher = rememberLauncherForActivityResult(RequestPermission()) { /* result ignored */ }
 
-    // 위치 가져오기 (HomeUiState에서)
-    val (lat, lon) = uiState.location ?: (37.402111 to 127.108678)
+    LaunchedEffect(Unit) {
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            actRecLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+        }
+    }
+    // 홈에서 받은 좌표(있으면 사용)
+    val homePos: Pair<Double, Double>? = uiState.location
+
+    // 현재 좌표 상태 (맵 진입 시 갱신)
+    var currentPos by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+
+    // 위치 권한 요청 런처 (단일 인스턴스)
+    val locLauncher = rememberLauncherForActivityResult(RequestPermission()) { granted ->
+        if (granted) {
+            fetchCurrentLocationOnce(context) { la, lo -> currentPos = la to lo }
+        } else {
+            // 거부 시엔 homePos 또는 기본값 사용
+            currentPos = null
+        }
+    }
+
+    // 진입 시 현재 위치 먼저 시도 → 실패하면 권한 요청
+    LaunchedEffect(Unit) {
+        fetchCurrentLocationOnce(context) { la, lo -> currentPos = la to lo }
+        if (currentPos == null) {
+            locLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+    }
+
+    // 최종 사용 좌표: 현재위치 > 홈좌표 > 기본값
+    val (lat, lon) = currentPos ?: homePos ?: (37.402111 to 127.108678)
 
     // 워크 트래킹 상태
     val isStarted    by mapViewModel.isStarted.collectAsState()
@@ -79,7 +137,7 @@ fun MapScreen(
                 modifier   = Modifier
                     .fillMaxWidth()
                     .weight(0.6f),
-                latitude   = lat,
+                latitude   = lat,   // ✅ 현재/홈/기본 순서로 결정된 좌표 사용
                 longitude  = lon,
                 path       = pathPoints,
                 startPoint = startPt
@@ -93,15 +151,23 @@ fun MapScreen(
                 isStarted     = isStarted,
                 onPauseToggle = {
                     if (!isStarted) {
-                        mapViewModel.recordStartLocation(lat, lon)
+                        mapViewModel.recordStartLocation(lat, lon) // ✅ 시작 지점 기록
                         mapViewModel.startStopwatch()
+                        mapViewModel.startLocationTracking(context) // ✅ 위치 추적 시작
                     } else {
                         mapViewModel.togglePause()
                     }
                 },
                 onEndWalk = {
-                    mapViewModel.resetStopwatch()
-                    Toast.makeText(context, "산책 종료", Toast.LENGTH_SHORT).show()
+                    // ✅ 순서 중요: 위치 중지 → 저장 → 성공 시 리셋/클리어
+                    mapViewModel.stopLocationTracking()
+                    mapViewModel.endWalkAndSave(context, mode = "MY") { ok ->
+                        Toast.makeText(context, if (ok) "산책 저장 완료" else "저장 실패", Toast.LENGTH_SHORT).show()
+                        if (ok) {
+                            mapViewModel.resetStopwatch()
+                            mapViewModel.clearWalk()
+                        }
+                    }
                 },
                 isSafeZone = true
             )
@@ -137,7 +203,7 @@ fun LectureKakaoMap(
         )
     }
 
-    // 내 위치 마커 (한 개만 갱신)
+    // 내 위치 마커 (1개만 유지하며 위치/카메라 갱신)
     val followLabel = remember { mutableStateOf<Label?>(null) }
     val followStyles = remember {
         val drw = AppCompatResources.getDrawable(context, R.drawable.ic_my_location_marker)!!
@@ -166,7 +232,9 @@ fun LectureKakaoMap(
             val pts = path.map { LatLng.from(it.first, it.second) }
             val mp  = MapPoints.fromLatLng(pts)
             if (polyline.value == null) {
-                polyline.value = layer.addPolyline(PolylineOptions.from(mp, 5f, android.graphics.Color.RED))
+                polyline.value = layer.addPolyline(
+                    PolylineOptions.from(mp, 5f, android.graphics.Color.RED)
+                )
             } else {
                 polyline.value?.changeMapPoints(listOf(mp))
             }
@@ -249,18 +317,8 @@ fun WalkStatItem(
     value: String,
     label: String
 ) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = value,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = Color.Gray
-        )
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(text = value, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text(text = label, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
     }
 }

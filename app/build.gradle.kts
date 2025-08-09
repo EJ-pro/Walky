@@ -73,6 +73,4 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.0.0")
 
     implementation("com.kakao.maps.open:android:2.11.9")
-
-
 }

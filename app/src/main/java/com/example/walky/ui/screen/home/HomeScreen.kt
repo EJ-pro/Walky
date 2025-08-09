@@ -11,15 +11,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -52,10 +47,11 @@ fun HomeScreen(
     // 초기 로드
     LaunchedEffect(Unit) {
         vm.loadProfileImage(context)
-        vm.loadTodayStats()
-
+        vm.startTodayStatsListener()   // ✅ 오늘 합계 실시간
+        // vm.loadTodayStats()  <- 제거 (dailyStats 문서를 안 쓰고, 실시간 합산만 사용)
     }
-    // ② Every time the screen becomes visible again (navigation back, app resume, etc.)
+
+    // 화면이 다시 보일 때마다 새로고침
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
@@ -63,7 +59,10 @@ fun HomeScreen(
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            vm.stopTodayStatsListener()
+        }
     }
 
     // Pretendard 폰트
@@ -83,6 +82,30 @@ fun HomeScreen(
     }
 
     var expanded by remember { mutableStateOf(false) }
+
+    @Composable
+    fun WeatherIcon(descriptionSimplified: String, sizeDp: Int = 40) {
+        val iconRes = when (descriptionSimplified) {
+            "맑음" -> R.drawable.ic_sun
+            "흐림" -> R.drawable.ic_sun
+            "비"   -> R.drawable.ic_sun
+            "눈"   -> R.drawable.ic_sun
+            "폭풍" -> R.drawable.ic_sun
+            "안개" -> R.drawable.ic_sun
+//            "흐림" -> R.drawable.ic_cloud
+//            "비"   -> R.drawable.ic_rain
+//            "눈"   -> R.drawable.ic_snow
+//            "폭풍" -> R.drawable.ic_storm
+//            "안개" -> R.drawable.ic_fog
+            else   -> R.drawable.ic_sun
+        }
+        Icon(
+            painter = painterResource(id = iconRes),
+            contentDescription = descriptionSimplified,
+            modifier = Modifier.size(sizeDp.dp),
+            tint = Color.Unspecified
+        )
+    }
 
     Column(
         Modifier
@@ -154,7 +177,6 @@ fun HomeScreen(
 
                 Spacer(Modifier.height(24.dp))
 
-
                 if (expanded) {
                     Spacer(Modifier.height(16.dp))
                     Text(
@@ -179,12 +201,7 @@ fun HomeScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Icon(
-                                    painter = painterResource(R.drawable.ic_sun),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(40.dp),
-                                    tint = Color.Unspecified
-                                )
+                                WeatherIcon(descriptionSimplified = state.description, sizeDp = 40)
                                 Spacer(Modifier.width(12.dp))
                                 Column {
                                     Text(
@@ -225,7 +242,7 @@ fun HomeScreen(
                             Divider(color = Color(0xFFEDEDED), thickness = 1.dp)
                             Spacer(Modifier.height(18.dp))
 
-                            // 걸음 통계
+                            // 걸음 통계 (오늘 합계)
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.fillMaxWidth()
@@ -268,10 +285,7 @@ fun HomeScreen(
 
                             Spacer(Modifier.height(16.dp))
                             LinearProgressIndicator(
-                                progress = (state.todaySteps / state.stepGoal.toFloat()).coerceIn(
-                                    0f,
-                                    1f
-                                ),
+                                progress = (state.todaySteps / state.stepGoal.toFloat()).coerceIn(0f, 1f),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(15.dp),
@@ -316,93 +330,7 @@ fun HomeScreen(
             Spacer(Modifier.height(16.dp))
         }
 
-        // 4️⃣ 챌린지 & 모드 토글
-        Spacer(Modifier.height(16.dp))
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .background(Color(0xFFF5F5F5))
-                .padding(horizontal = 16.dp)
-        ) {
-            // Today Challenge 카드
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFFAF3C0)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "Today Challenge",
-                            fontFamily = pretendard,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.Black
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Card(
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                "• 반려동물 산책 인증!\n강아지나 고양이와 산책 포토를 찍어보세요!\n귀여움과 건강을 동시에.",
-                                fontFamily = pretendard,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Normal,
-                                color = Color.DarkGray,
-                                modifier = Modifier.padding(12.dp)
-                            )
-                        }
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Image(
-                        painter = painterResource(R.drawable.ic_kakao),
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(80.dp)
-                            .clip(RoundedCornerShape(12.dp)),
-                        contentScale = ContentScale.Crop
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            // 모드 토글 버튼
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                val modes = listOf("MY", "PET")
-                var selectedMode by remember { mutableStateOf("MY") }
-                modes.forEach { mode ->
-                    OutlinedButton(
-                        onClick = { selectedMode = mode },
-                        modifier = Modifier
-                            .padding(start = 4.dp)
-                            .height(32.dp)
-                            .width(60.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = if (selectedMode == mode) Color.Black else Color.White,
-                            contentColor = if (selectedMode == mode) Color.White else Color.Gray
-                        )
-                    ) {
-                        Text(
-                            mode,
-                            fontFamily = pretendard,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-            }
-        }
-
-        // 5️⃣ 최근 산책 기록
+        // 최근 산책 기록
         Spacer(Modifier.height(16.dp))
         Column(
             Modifier
@@ -452,7 +380,6 @@ fun HomeScreen(
             }
         }
 
-        // 끝 여백
         Spacer(
             Modifier
                 .fillMaxWidth()

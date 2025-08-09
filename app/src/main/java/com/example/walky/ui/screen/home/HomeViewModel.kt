@@ -8,7 +8,6 @@ import com.example.walky.data.WeatherRepository
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.ListenerRegistration
 import com.kakao.sdk.user.UserApiClient
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,10 +16,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.TimeUnit
 
+// 최근 산책 리스트에 보여줄 항목
 data class WalkRecord(
     val title: String,
     val date: LocalDateTime,
@@ -28,27 +31,38 @@ data class WalkRecord(
     val distanceKm: Double,
     val calories: Int
 )
+
 data class HomeUiState(
     val userName: String = "",
     val profileImageUrl: String? = null,
+
+    // 날씨
     val weatherCity: String = "",
     val tempC: Int = 0,
     val description: String = "",
     val humidity: Int = 0,
+
+    // 오늘 요약 (하루 전체 합산)
     val todaySteps: Int = 0,
     val todayDistanceKm: Double = 0.0,
     val todayDurationMin: Int = 0,
     val stepGoal: Int = 10000,
+
+    // 위치
     val location: Pair<Double, Double>? = null,
+
+    // 최근 산책
     val recentWalks: List<WalkRecord> = emptyList(),
+
     val isLoading: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
 )
 
 class HomeViewModel(
     private val locRepo: LocationRepository = LocationRepository(),
     private val weatherRepo: WeatherRepository = WeatherRepository()
 ) : ViewModel() {
+
     private val auth = FirebaseAuth.getInstance()
     private val db   = FirebaseFirestore.getInstance()
 
@@ -56,30 +70,24 @@ class HomeViewModel(
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     private var userListener: ListenerRegistration? = null
+    private var walksListener: ListenerRegistration? = null
+    private var todayListener: ListenerRegistration? = null
+
+    init {
+        // 사용자 프로필(닉네임/이미지) 로드
+        loadUserProfile()
+        // 최근 산책 목록 (오직 리스트만 갱신 — 오늘 합계는 건드리지 않음)
+        observeRecentWalks()
+    }
 
     fun refreshAll(context: Context) {
         loadProfileImage(context)
-        loadTodayStats()
-        fetchLocationAndWeather(context)
         loadUserName()
+        fetchLocationAndWeather(context)
+        // 오늘 합계는 startTodayStatsListener가 실시간으로 처리
     }
 
-    init {
-        loadUserProfile()
-        loadTodayStats()
-        loadRecentWalks()
-    }
-    private fun loadRecentWalks() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(
-                recentWalks = listOf(
-                    // 예시 더미
-                    WalkRecord("예시 산책", LocalDateTime.now(), 30, 2.0, 100)
-                )
-            ) }
-        }
-    }
-
+    /** Firestore: users/{uid}/profile/info.nickname & photoUrl 우선 적용 */
     private fun loadUserProfile() {
         val user = auth.currentUser ?: return
         db.collection("users")
@@ -88,54 +96,44 @@ class HomeViewModel(
             .document("info")
             .get()
             .addOnSuccessListener { doc ->
-                // 1) 닉네임은 항상 업데이트
-                val nick = doc.getString("nickname") ?: user.displayName.orEmpty()
+                val nick = doc.getString("nickname")
+                    ?: user.displayName.orEmpty()
                 _uiState.update { it.copy(userName = nick) }
 
-                // 2) Firestore 에 이미지가 있을 때만 업데이트
                 doc.getString("photoUrl")?.let { url ->
                     _uiState.update { it.copy(profileImageUrl = url) }
                 }
             }
     }
 
+    /** 유저명 단독 로드 (fallback) */
     fun loadUserName() {
-        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
-        FirebaseFirestore.getInstance()
-            .collection("users")
+        val uid = auth.currentUser?.uid ?: return
+        db.collection("users")
             .document(uid)
             .get()
             .addOnSuccessListener { snap ->
-                val name = snap.getString("displayName") ?: ""
-                _uiState.update { it.copy(userName = name) }
+                val name = snap.getString("displayName")
+                if (!name.isNullOrBlank()) {
+                    _uiState.update { it.copy(userName = name) }
+                }
             }
     }
 
-    /** Google/Kakao 프로필 이미지 fetch (Context 필요) */
+    /** Google/Kakao/Firebase 사진 순으로 시도 */
     fun loadProfileImage(context: Context) {
-        // 1) FirebaseAuth 에서 먼저 시도
-        FirebaseAuth.getInstance().currentUser
-            ?.photoUrl
-            ?.toString()
-            ?.let { url ->
-                _uiState.update { it.copy(profileImageUrl = url) }
-                return
-            }
-        // Google
-        GoogleSignIn.getLastSignedInAccount(context)?.photoUrl
-            ?.toString()
-            ?.let { url ->
-                _uiState.update { it.copy(profileImageUrl = url) }
-                return
-            }
-        // Kakao
+        FirebaseAuth.getInstance().currentUser?.photoUrl?.toString()?.let { url ->
+            _uiState.update { it.copy(profileImageUrl = url) }
+            return
+        }
+        GoogleSignIn.getLastSignedInAccount(context)?.photoUrl?.toString()?.let { url ->
+            _uiState.update { it.copy(profileImageUrl = url) }
+            return
+        }
         UserApiClient.instance.me { user, _ ->
-            user?.kakaoAccount
-                ?.profile
-                ?.thumbnailImageUrl
-                ?.let { url ->
-                    _uiState.update { it.copy(profileImageUrl = url) }
-                }
+            user?.kakaoAccount?.profile?.thumbnailImageUrl?.let { url ->
+                _uiState.update { it.copy(profileImageUrl = url) }
+            }
         }
     }
 
@@ -146,14 +144,16 @@ class HomeViewModel(
             try {
                 val (lat, lon) = locRepo.getCurrentLocation(context)
                 _uiState.update { it.copy(location = lat to lon) }
+
                 val res = weatherRepo.fetchCurrentWeatherByCoords(lat, lon)
+                val rawDescription = res.weather.firstOrNull()?.description.orEmpty()
                 _uiState.update {
                     it.copy(
-                        weatherCity    = res.name,
-                        tempC          = res.main.temp.toInt(),
-                        description    = res.weather.firstOrNull()?.description.orEmpty(),
-                        humidity       = res.main.humidity.toInt(),
-                        isLoading      = false
+                        weatherCity = res.name,
+                        tempC       = res.main.temp.toInt(),
+                        description = simplifyWeather(rawDescription),
+                        humidity    = res.main.humidity.toInt(),
+                        isLoading   = false
                     )
                 }
             } catch (e: Exception) {
@@ -162,45 +162,132 @@ class HomeViewModel(
         }
     }
 
-    /** 오늘 날짜 통계 read */
-    fun loadTodayStats() {
-        val uid = auth.currentUser?.uid ?: return
-        val today = LocalDate.now().format(DateTimeFormatter.ISO_DATE)
-        viewModelScope.launch {
-            try {
-                val doc = db.collection("users")
-                    .document(uid)
-                    .collection("dailyStats")
-                    .document(today)
-                    .get()
-                    .await()
-                if (doc.exists()) {
-                    _uiState.update {
-                        it.copy(
-                            todaySteps       = doc.getLong("steps")?.toInt() ?: 0,
-                            todayDistanceKm  = doc.getDouble("distanceKm") ?: 0.0,
-                            todayDurationMin = doc.getLong("durationMin")?.toInt() ?: 0
-                        )
+    // ✅ 오늘(Asia/Seoul) 범위의 모든 산책을 합산해서 uiState에 반영
+    fun startTodayStatsListener() {
+        todayListener?.remove()
+
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        val zone = ZoneId.of("Asia/Seoul")
+        val startOfDay = LocalDate.now(zone).atStartOfDay(zone).toInstant().toEpochMilli()
+        val startOfTomorrow = LocalDate.now(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+
+        todayListener = FirebaseFirestore.getInstance()
+            .collection("users").document(uid)
+            .collection("walks")
+            .whereGreaterThanOrEqualTo("endedAt", startOfDay)
+            .whereLessThan("endedAt", startOfTomorrow)
+            .addSnapshotListener { snap, e ->
+                if (e != null || snap == null) return@addSnapshotListener
+
+                var totalSteps = 0
+                var totalCalories = 0
+                var totalDurationMs = 0L
+                var totalDistanceKm = 0.0
+
+                val MAX_REASONABLE = 36L * 60L * 60L * 1000L // 36시간
+
+                for (doc in snap.documents) {
+                    // 1) 가능한 경우 endedAt - startedAt를 신뢰
+                    val s = doc.getLong("startedAt")
+                    val e = doc.getLong("endedAt")
+                    val byBounds = if (s != null && e != null && e >= s) e - s else null
+
+                    val raw = doc.getLong("durationMs")
+                    val MAX = 36L * 60 * 60 * 1000
+                    val byRaw = when {
+                        raw == null -> 0L
+                        raw in 0..MAX -> raw
+                        raw in 0..(36L * 60L * 60L) -> raw * 1000L      // 초로 잘못 저장된 경우
+                        raw in 0..(36L * 60L) -> raw * 60_000L         // 분으로 잘못 저장된 경우
+                        else -> 0L
                     }
+
+                    val dur = byBounds ?: byRaw
+                    totalDurationMs += dur
+
+                    totalSteps      += (doc.getLong("steps") ?: 0L).toInt()
+                    totalCalories   += (doc.getLong("calories") ?: 0L).toInt()
+                    totalDistanceKm += doc.getDouble("distanceKm")
+                        ?: (doc.getLong("distanceKm")?.toDouble() ?: 0.0)
                 }
-            } catch (_: Exception) { /* ignore */ }
+
+                _uiState.update {
+                    it.copy(
+                        todaySteps = totalSteps,
+                        todayDistanceKm = totalDistanceKm,
+                        todayDurationMin = java.util.concurrent.TimeUnit.MILLISECONDS
+                            .toMinutes(totalDurationMs).toInt()
+                    )
+                }
+            }
+    }
+
+    fun stopTodayStatsListener() {
+        todayListener?.remove()
+        todayListener = null
+    }
+
+    private fun simplifyWeather(description: String): String {
+        val lower = description.lowercase()
+        return when {
+            listOf("clear", "sun", "맑음").any { it in lower } -> "맑음"
+            listOf("cloud", "흐림").any { it in lower } -> "흐림"
+            listOf("rain", "drizzle", "비").any { it in lower } -> "비"
+            listOf("snow", "눈").any { it in lower } -> "눈"
+            listOf("storm", "thunder", "번개").any { it in lower } -> "폭풍"
+            listOf("fog", "mist", "연무", "안개").any { it in lower } -> "안개"
+            else -> "기타"
         }
     }
 
-    /** 오늘 날짜 통계 write */
-    fun saveTodayStats() {
-        val uid   = auth.currentUser?.uid ?: return
-        val today = LocalDate.now().format(DateTimeFormatter.ISO_DATE)
-        val data = mapOf(
-            "steps"        to _uiState.value.todaySteps,
-            "distanceKm"   to _uiState.value.todayDistanceKm,
-            "durationMin"  to _uiState.value.todayDurationMin,
-            "updatedAt"    to FieldValue.serverTimestamp()
-        )
-        db.collection("users")
+    /**
+     * 최근 산책 목록 (리스트만 갱신)
+     * 저장 스키마 가정: users/{uid}/walks/{autoId}
+     *  - steps:Int, distanceKm:Double, durationMs:Long, calories:Int
+     *  - startedAt:Long(ms), endedAt:Long(ms)
+     */
+    private fun observeRecentWalks(limit: Long = 10) {
+        val uid = auth.currentUser?.uid ?: return
+        walksListener?.remove()
+        walksListener = db.collection("users")
             .document(uid)
-            .collection("dailyStats")
-            .document(today)
-            .set(data)
+            .collection("walks")
+            .orderBy("endedAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .limit(limit)
+            .addSnapshotListener { snap, err ->
+                if (err != null || snap == null) return@addSnapshotListener
+
+                val zone = ZoneId.systemDefault()
+                val records = snap.documents.mapNotNull { d ->
+                    val title = d.getString("title") ?: "산책"
+                    val endedAt = d.getLong("endedAt") ?: d.getLong("startedAt")
+                    val durationMs = d.getLong("durationMs") ?: 0L
+                    val distanceKm = d.getDouble("distanceKm") ?: 0.0
+                    val calories = (d.getLong("calories") ?: 0L).toInt()
+
+                    val date = (endedAt ?: 0L).let {
+                        if (it == 0L) LocalDateTime.now(zone)
+                        else LocalDateTime.ofInstant(Instant.ofEpochMilli(it), zone)
+                    }
+
+                    WalkRecord(
+                        title        = title,
+                        date         = date,
+                        durationMin  = TimeUnit.MILLISECONDS.toMinutes(durationMs).toInt(),
+                        distanceKm   = distanceKm,
+                        calories     = calories
+                    )
+                }
+
+                // ✅ 최근 리스트만 업데이트 (오늘 합계는 건드리지 않는다)
+                _uiState.update { it.copy(recentWalks = records) }
+            }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        userListener?.remove()
+        walksListener?.remove()
+        todayListener?.remove()
     }
 }
