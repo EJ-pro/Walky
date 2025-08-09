@@ -2,16 +2,24 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.example.walky">
 
-    <!-- 위치 및 인터넷 권한 -->
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.health.READ_STEPS" />
-
+    <!-- Health Connect provider 가시성 -->
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
     </queries>
 
+    <!-- 권한들 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Health Connect는 런타임 권한으로 처리되지만, READ_STEPS 선언은 문제 없음 -->
+    <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <!-- 앱이 완전 백그라운드에서도 위치 추적할 때만 필요 -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- API 34+ 권장 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- Android 13+ 알림 권한 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".WalkyApp"
@@ -24,7 +32,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Walky">
 
-        <!-- Kakao SDK 앱키 -->
+        <!-- Kakao SDK -->
         <meta-data
             android:name="com.kakao.sdk.AppKey"
             android:value="@string/kakao_native_app_key" />
@@ -36,7 +44,7 @@
             android:name="com.google.android.gms.version"
             android:value="@integer/google_play_services_version" />
 
-        <!-- Kakao 로그인 콜백용 Activity -->
+        <!-- Kakao 로그인 콜백 -->
         <activity
             android:name="com.kakao.sdk.auth.AuthCodeHandlerActivity"
             android:exported="true">
@@ -50,7 +58,7 @@
             </intent-filter>
         </activity>
 
-        <!-- 앱 메인 Activity -->
+        <!-- 메인 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -59,18 +67,14 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
-                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
             </intent-filter>
         </activity>
-        <activity-alias
-            android:name=".ViewPermissionUsageActivity"
-            android:exported="true"
-            android:targetActivity=".MainActivity"
-            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
-                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
-            </intent-filter>
-        </activity-alias>
+
+        <!-- 포어그라운드 서비스 (패키지 경로 확인: .walk.WalkTrackingService 가 맞는지) -->
+        <service
+            android:name=".walk.WalkTrackingService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
     </application>
+
 </manifest>

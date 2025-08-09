@@ -1,4 +1,3 @@
-// app/src/main/java/com/example/walky/ui/screen/profile/ProfileScreen.kt
 package com.example.walky.ui.screen.profile
 
 import androidx.compose.foundation.background
@@ -17,15 +16,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.walky.data.DogProfile
+import com.example.walky.gamification.rankBadgeResId
 import kotlin.math.floor
-
-
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,6 +34,10 @@ fun ProfileScreen(
     vm: ProfileViewModel = viewModel()
 ) {
     val state by vm.ui.collectAsState()
+
+    // ✅ 등급 전용 VM
+    val rankVm: RankViewModel = viewModel()
+    val rank by rankVm.ui.collectAsState()
 
     Scaffold(
         topBar = {
@@ -45,6 +49,9 @@ fun ProfileScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { rankVm.refresh() }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                    }
                     IconButton(onClick = { /* 앱 설정 */ }) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
@@ -52,7 +59,7 @@ fun ProfileScreen(
             )
         }
     ) { inner ->
-        if (state.isLoading) {
+        if (state.isLoading || rank.loading) {
             Box(Modifier.fillMaxSize().padding(inner), Alignment.Center) {
                 CircularProgressIndicator()
             }
@@ -75,6 +82,25 @@ fun ProfileScreen(
                     photoUrl = state.user?.photoUrl.orEmpty(),
                     onEdit = vm::openEdit
                 )
+            }
+
+            // --- ✅ 등급 / 오늘 점수 / 14일 히스토리 ---
+            item {
+                RankCard(
+                    badgeRes = rankBadgeResId(rank.rankTier),
+                    tierName = rank.rankTier.display,
+                    points14d = rank.points14d,
+                    nextTierName = rank.nextTierName,
+                    progress = rank.fractionToNext,
+                    toNext = rank.toNext,
+                    streakDays = rank.streakDays
+                )
+            }
+            item {
+                TodayScoreCard(score = rank.todayScore)
+            }
+            item {
+                History14dCard(items = rank.dailyBreakdown)
             }
 
             // --- 내 강아지 ---
@@ -105,9 +131,9 @@ fun ProfileScreen(
 
             // --- 설정 리스트 ---
             item { SettingsItem("알림 설정", Icons.Default.Notifications) { /* nav */ } }
-            item { SettingsItem("차단 유저 관리", Icons.Default.Settings) { /* nav */ } }
-            item { SettingsItem("개인정보 보호", Icons.Default.Settings) { /* nav */ } }
-            item { SettingsItem("고객 지원", Icons.Default.Settings) { /* nav */ } }
+            item { SettingsItem("차단 유저 관리", Icons.Default.Notifications) { /* nav */ } }
+            item { SettingsItem("개인정보 보호", Icons.Default.Notifications) { /* nav */ } }
+            item { SettingsItem("고객 지원", Icons.Default.Notifications) { /* nav */ } }
             item { SettingsItem("앱 정보", Icons.Default.Info) { /* nav */ } }
 
             // --- 로그아웃 ---
@@ -124,7 +150,7 @@ fun ProfileScreen(
                         .height(52.dp),
                     shape = RoundedCornerShape(14.dp)
                 ) {
-                    Icon(Icons.Default.Settings, contentDescription = null)
+                    Icon(Icons.Default.Notifications, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text("로그아웃")
                 }
@@ -140,9 +166,8 @@ fun ProfileScreen(
         onSave = { n, l, e -> vm.saveProfile(n, l, e, photoUrl = null) }
     )
 
-
     if (state.showAddDogDialog) AddDogDialog(
-        onDismiss = vm::closeAddDog,
+        onDismiss = vm::closeAddDog, // ← 콜론(:) 말고 이퀄(=)
         onSave = { name, breed, age, neutered -> vm.addDog(name, breed, age, neutered) }
     )
 }
@@ -164,13 +189,10 @@ private fun SettingsItem(
         Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.width(12.dp))
         Text(title, modifier = Modifier.weight(1f))
-        Icon(Icons.Default.Settings, contentDescription = null, tint = Color.Gray)
+        Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = Color.Gray)
     }
     Divider(thickness = 0.5.dp, color = Color(0x14000000))
 }
-
-
-/* ---------- Composables ---------- */
 
 @Composable
 private fun ProfileCard(
@@ -267,12 +289,12 @@ private fun DogRow(
                     .background(bg.copy(alpha = .25f)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.Settings, contentDescription = null, tint = bg)
+                Icon(Icons.Default.Notifications, contentDescription = null, tint = bg)
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(dog.name, style = MaterialTheme.typography.titleMedium)
-                Text("${dog.breed} • ${dog.age}살 • ${if (dog.neutered) "수컷(중성)" else "미중성"}",
+                Text("${dog.breed} • ${dog.age}살 • ${if (dog.neutered) "중성" else "미중성"}",
                     style = MaterialTheme.typography.bodySmall, color = Color.Gray)
             }
             IconButton(onClick = onLongPressDelete) {
@@ -285,28 +307,113 @@ private fun DogRow(
 @Composable
 private fun StatsRow(count: Int, totalKm: Double, totalMinutes: Int) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        StatCard(Icons.Default.Settings, "이번 주", "${count}회", Color(0xFF4F83CC))
-        StatCard(Icons.Default.Settings, "총 거리", String.format("%.1fkm", totalKm), Color(0xFF2E7D32))
+        StatCard(Icons.Default.Notifications, "이번 주", "${count}회", Color(0xFF4F83CC))
+        StatCard(Icons.Default.Notifications, "총 거리", String.format("%.1fkm", totalKm), Color(0xFF2E7D32))
         val h = floor(totalMinutes / 60f).toInt()
         val m = totalMinutes % 60
-        StatCard(Icons.Default.Settings, "총 시간", "${h}시간 ${m}분", Color(0xFF8E24AA))
+        StatCard(Icons.Default.Notifications, "총 시간", "${h}시간 ${m}분", Color(0xFF8E24AA))
     }
 }
 
 @Composable
-private fun StatCard(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, value: String, tint: Color) {
+private fun StatCard(icon: ImageVector, label: String, value: String, tint: Color) {
     Card(
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = tint.copy(alpha = 0.08f)),
     ) {
         Column(
-            Modifier.fillMaxSize().padding(12.dp),
+            Modifier.fillMaxWidth().padding(12.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Icon(icon, contentDescription = null, tint = tint)
             Column {
                 Text(label, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
                 Text(value, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+// ---------------- 등급 UI 추가 컴포저블 ----------------
+
+@Composable
+private fun RankCard(
+    badgeRes: Int,
+    tierName: String,
+    points14d: Int,
+    nextTierName: String?,
+    progress: Float,
+    toNext: Int,
+    streakDays: Int
+) {
+    Card(shape = RoundedCornerShape(16.dp)) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                painter = painterResource(id = badgeRes),
+                contentDescription = null,
+                tint = Color.Unspecified,
+                modifier = Modifier.size(72.dp)
+            )
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text("펫 등급", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
+                Text(tierName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = progress.coerceIn(0f,1f),
+                    modifier = Modifier.fillMaxWidth().height(10.dp),
+                    trackColor = Color(0xFFEDEDED)
+                )
+                Spacer(Modifier.height(6.dp))
+                val nextText = nextTierName?.let { "다음 $it 까지 $toNext 점" } ?: "최고 등급!"
+                Text("$nextText · 최근 14일 ${points14d}점 · 연속 ${streakDays}일",
+                    style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TodayScoreCard(score: Int) {
+    Card(shape = RoundedCornerShape(16.dp)) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("오늘 점수", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
+                Text("$score 점", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun History14dCard(items: List<Pair<java.time.LocalDate, Int>>) {
+    Card(shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Text("최근 14일", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
+            Spacer(Modifier.height(12.dp))
+            if (items.isEmpty()) {
+                Text("기록이 없어요.", color = Color.Gray)
+            } else {
+                val max = (items.maxOf { it.second }.coerceAtLeast(1)).toFloat()
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items.forEach { (date, score) ->
+                        val h = (70 * (score / max)).coerceAtLeast(6f)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box(
+                                Modifier
+                                    .width(16.dp)
+                                    .height(h.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFF68CA8F))
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                date.format(DateTimeFormatter.ofPattern("MM/dd")),
+                                style = MaterialTheme.typography.labelSmall, color = Color.Gray
+                            )
+                        }
+                    }
+                }
             }
         }
     }

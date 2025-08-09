@@ -24,7 +24,6 @@ import com.example.walky.ui.screen.chat.ChatScreen
 import com.example.walky.ui.screen.home.HomeScreen
 import com.example.walky.ui.screen.map.MapScreen
 import com.example.walky.ui.screen.profile.ProfileScreen
-import com.example.walky.ui.screen.walk.WalkHistoryScreen
 
 @Composable
 fun MainScaffoldNav(rootNavController: NavHostController) {
@@ -103,7 +102,7 @@ fun MainScaffoldNav(rootNavController: NavHostController) {
         ) {
             composable(WalkyScreen.Home.route)      { HomeScreen() }
             composable(WalkyScreen.Map.route)       { MapScreen() }
-            composable(WalkyScreen.Walks.route)     { WalkHistoryScreen() }
+            composable(WalkyScreen.Walks.route)     { ChatScreen() }
             composable(WalkyScreen.Community.route) { ChatScreen() }
             composable(WalkyScreen.Profile.route)   { ProfileScreen(navController = rootNavController) }
         }

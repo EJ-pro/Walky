@@ -13,6 +13,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.Instant
+import java.time.LocalDateTime
 
 class HealthConnectRepository(
     private val zoneId: ZoneId = ZoneId.of("Asia/Seoul")
@@ -49,5 +51,21 @@ class HealthConnectRepository(
             )
         )
         (result[StepsRecord.COUNT_TOTAL] ?: 0L).toInt()
+    }
+
+    suspend fun readStepsBetween(context: Context, startMs: Long, endMs: Long = System.currentTimeMillis()): Int {
+        val client = getClientOrNull(context) ?: return 0
+
+        // 네 프로젝트의 HC 버전에 맞춰 LocalDateTime 기반으로 사용
+        val startLdt = LocalDateTime.ofInstant(Instant.ofEpochMilli(startMs), zoneId)
+        val endLdt   = LocalDateTime.ofInstant(Instant.ofEpochMilli(endMs), zoneId)
+
+        val result = client.aggregate(
+            androidx.health.connect.client.request.AggregateRequest(
+                metrics = setOf(androidx.health.connect.client.records.StepsRecord.COUNT_TOTAL),
+                timeRangeFilter = androidx.health.connect.client.time.TimeRangeFilter.between(startLdt, endLdt)
+            )
+        )
+        return (result[androidx.health.connect.client.records.StepsRecord.COUNT_TOTAL] ?: 0L).toInt()
     }
 }

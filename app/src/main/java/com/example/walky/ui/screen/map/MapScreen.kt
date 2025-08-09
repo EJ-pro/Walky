@@ -41,19 +41,17 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 
-/** Drawable → Bitmap 유틸 */
 private fun drawableToBitmap(drawable: Drawable): Bitmap {
-    val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 64
-    val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 64
-    return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bmp ->
+    val w = drawable.intrinsicWidth.takeIf { it > 0 } ?: 64
+    val h = drawable.intrinsicHeight.takeIf { it > 0 } ?: 64
+    return Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { bmp ->
         Canvas(bmp).apply {
-            drawable.setBounds(0, 0, width, height)
-            drawable.draw(this)
+            drawable.setBounds(0, 0, w, h); drawable.draw(this)
         }
     }
 }
 
-/** 현재 위치 1회 취득 (권한 가정) + lastLocation 폴백 */
+/** 현재 위치 1회 취득 (권한 필요) + lastLocation 폴백 */
 private fun fetchCurrentLocationOnce(
     context: Context,
     onResult: (Double, Double) -> Unit
@@ -63,59 +61,45 @@ private fun fetchCurrentLocationOnce(
         val cts = CancellationTokenSource()
         fused.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cts.token)
             .addOnSuccessListener { loc ->
-                if (loc != null) {
-                    onResult(loc.latitude, loc.longitude)
-                } else {
-                    fused.lastLocation.addOnSuccessListener { last ->
-                        if (last != null) onResult(last.latitude, last.longitude)
-                    }
+                if (loc != null) onResult(loc.latitude, loc.longitude)
+                else fused.lastLocation.addOnSuccessListener { last ->
+                    if (last != null) onResult(last.latitude, last.longitude)
                 }
             }
-    } catch (_: SecurityException) {
-        // 권한 없는 경우 조용히 무시
-    }
+    } catch (_: SecurityException) { }
 }
 
 @Composable
 fun MapScreen(
     mapViewModel: MapViewModel = viewModel(),
-    homeViewModel: HomeViewModel = viewModel()
+    homeViewModel: HomeViewModel = viewModel() // 지금은 안 쓰지만 시그니처 유지
 ) {
     val context = LocalContext.current
-    val uiState by homeViewModel.uiState.collectAsState()
-    val actRecLauncher = rememberLauncherForActivityResult(RequestPermission()) { /* result ignored */ }
 
-    LaunchedEffect(Unit) {
-        if (android.os.Build.VERSION.SDK_INT >= 29) {
-            actRecLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
-        }
-    }
-    // 홈에서 받은 좌표(있으면 사용)
-    val homePos: Pair<Double, Double>? = uiState.location
-
-    // 현재 좌표 상태 (맵 진입 시 갱신)
+    // 무조건 내 위치만 사용
     var currentPos by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+    var permissionDenied by remember { mutableStateOf(false) }
+    var isLoadingLocation by remember { mutableStateOf(true) }
 
-    // 위치 권한 요청 런처 (단일 인스턴스)
+    // 위치 권한 런처
     val locLauncher = rememberLauncherForActivityResult(RequestPermission()) { granted ->
         if (granted) {
-            fetchCurrentLocationOnce(context) { la, lo -> currentPos = la to lo }
+            permissionDenied = false
+            fetchCurrentLocationOnce(context) { la, lo ->
+                currentPos = la to lo
+                isLoadingLocation = false
+            }
         } else {
-            // 거부 시엔 homePos 또는 기본값 사용
-            currentPos = null
+            permissionDenied = true
+            isLoadingLocation = false
         }
     }
 
-    // 진입 시 현재 위치 먼저 시도 → 실패하면 권한 요청
+    // 진입 시: 권한 요청 → 허용되면 즉시 현재 위치 취득
     LaunchedEffect(Unit) {
-        fetchCurrentLocationOnce(context) { la, lo -> currentPos = la to lo }
-        if (currentPos == null) {
-            locLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
+        isLoadingLocation = true
+        locLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
     }
-
-    // 최종 사용 좌표: 현재위치 > 홈좌표 > 기본값
-    val (lat, lon) = currentPos ?: homePos ?: (37.402111 to 127.108678)
 
     // 워크 트래킹 상태
     val isStarted    by mapViewModel.isStarted.collectAsState()
@@ -133,15 +117,73 @@ fun MapScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            LectureKakaoMap(
-                modifier   = Modifier
-                    .fillMaxWidth()
-                    .weight(0.6f),
-                latitude   = lat,   // ✅ 현재/홈/기본 순서로 결정된 좌표 사용
-                longitude  = lon,
-                path       = pathPoints,
-                startPoint = startPt
-            )
+            // ----- 상단 지도 영역 -----
+            when {
+                isLoadingLocation -> {
+                    // 로딩
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(0.6f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                        Spacer(Modifier.height(8.dp))
+                    }
+                }
+                permissionDenied -> {
+                    // 권한 거부됨 → 재요청 버튼
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(0.6f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("내 위치 권한이 필요합니다.")
+                            Spacer(Modifier.height(8.dp))
+                            Button(onClick = {
+                                isLoadingLocation = true
+                                locLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                            }) {
+                                Text("권한 허용")
+                            }
+                        }
+                    }
+                }
+                currentPos == null -> {
+                    // 권한은 OK인데 아직 좌표가 없음 → 한번 더 시도
+                    LaunchedEffect("retry-fetch") {
+                        fetchCurrentLocationOnce(context) { la, lo ->
+                            currentPos = la to lo
+                            isLoadingLocation = false
+                        }
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(0.6f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+                else -> {
+                    // ✅ 좌표 준비 완료 → 이때만 지도 렌더링 (초기 중심 = 내 위치)
+                    val (lat, lon) = currentPos!!
+                    LectureKakaoMap(
+                        modifier   = Modifier
+                            .fillMaxWidth()
+                            .weight(0.6f),
+                        latitude   = lat,
+                        longitude  = lon,
+                        path       = pathPoints,
+                        startPoint = startPt
+                    )
+                }
+            }
+
+            // ----- 하단 컨트롤 -----
             WalkTrackingBottomBar(
                 stepCount     = stepCount,
                 distanceKm    = distanceKm,
@@ -151,16 +193,24 @@ fun MapScreen(
                 isStarted     = isStarted,
                 onPauseToggle = {
                     if (!isStarted) {
-                        mapViewModel.recordStartLocation(lat, lon) // ✅ 시작 지점 기록
+                        // 시작: 좌표 없으면 막기
+                        val pos = currentPos
+                        if (pos == null) {
+                            Toast.makeText(context, "내 위치를 먼저 가져오는 중입니다…", Toast.LENGTH_SHORT).show()
+                            return@WalkTrackingBottomBar
+                        }
+                        val (lat, lon) = pos
+                        mapViewModel.recordStartLocation(lat, lon)
                         mapViewModel.startStopwatch()
-                        mapViewModel.startLocationTracking(context) // ✅ 위치 추적 시작
+                        mapViewModel.startLocationTracking(context)
+                        mapViewModel.startHealthStepsPolling(context)
                     } else {
                         mapViewModel.togglePause()
                     }
                 },
                 onEndWalk = {
-                    // ✅ 순서 중요: 위치 중지 → 저장 → 성공 시 리셋/클리어
                     mapViewModel.stopLocationTracking()
+                    mapViewModel.stopHealthStepsPolling()
                     mapViewModel.endWalkAndSave(context, mode = "MY") { ok ->
                         Toast.makeText(context, if (ok) "산책 저장 완료" else "저장 실패", Toast.LENGTH_SHORT).show()
                         if (ok) {
@@ -187,14 +237,13 @@ fun LectureKakaoMap(
     val mapView = remember { MapView(context) }
     var kakaoMap by remember { mutableStateOf<KakaoMap?>(null) }
 
-    // 맵 초기화 (한 번)
+    // 맵 첫 초기화: 이 컴포저블은 currentPos 준비 후에만 호출되므로
+    // 초기 카메라는 항상 내 위치로 잡힘
     LaunchedEffect(Unit) {
         mapView.start(
             object : MapLifeCycleCallback() {
                 override fun onMapDestroy() {}
-                override fun onMapError(e: Exception?) {
-                    Toast.makeText(context, "지도 오류: $e", Toast.LENGTH_LONG).show()
-                }
+                override fun onMapError(e: Exception?) { }
             },
             object : KakaoMapReadyCallback() {
                 override fun onMapReady(map: KakaoMap) { kakaoMap = map }
@@ -203,7 +252,7 @@ fun LectureKakaoMap(
         )
     }
 
-    // 내 위치 마커 (1개만 유지하며 위치/카메라 갱신)
+    // 내 위치 마커 & 카메라 이동
     val followLabel = remember { mutableStateOf<Label?>(null) }
     val followStyles = remember {
         val drw = AppCompatResources.getDrawable(context, R.drawable.ic_my_location_marker)!!
@@ -216,9 +265,7 @@ fun LectureKakaoMap(
             if (followLabel.value == null) {
                 val styles = map.labelManager?.addLabelStyles(followStyles)!!
                 followLabel.value = layer.addLabel(LabelOptions.from(pos).setStyles(styles))
-            } else {
-                followLabel.value?.moveTo(pos)
-            }
+            } else followLabel.value?.moveTo(pos)
             map.moveCamera(CameraUpdateFactory.newCenterPosition(pos))
         }
     }
@@ -237,25 +284,6 @@ fun LectureKakaoMap(
                 )
             } else {
                 polyline.value?.changeMapPoints(listOf(mp))
-            }
-        }
-    }
-
-    // 시작 지점 마커
-    val startLabel = remember { mutableStateOf<Label?>(null) }
-    val startStyles = remember {
-        val drw = AppCompatResources.getDrawable(context, R.drawable.ic_my_location_marker)!!
-        LabelStyles.from(LabelStyle.from(drawableToBitmap(drw)))
-    }
-    LaunchedEffect(startPoint) {
-        startPoint?.let { sp ->
-            kakaoMap?.let { map ->
-                val layer = map.labelManager?.layer ?: return@let
-                startLabel.value?.hide()
-                val styles = map.labelManager?.addLabelStyles(startStyles)!!
-                startLabel.value = layer.addLabel(
-                    LabelOptions.from(LatLng.from(sp.first, sp.second)).setStyles(styles)
-                )
             }
         }
     }
@@ -313,10 +341,7 @@ fun WalkTrackingBottomBar(
 }
 
 @Composable
-fun WalkStatItem(
-    value: String,
-    label: String
-) {
+fun WalkStatItem(value: String, label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(text = value, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Text(text = label, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
